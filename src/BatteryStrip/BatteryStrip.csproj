@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>BatteryStrip</AssemblyName>
+    <RootNamespace>BatteryStrip</RootNamespace>
+    <AssemblyTitle>Заряд устройств</AssemblyTitle>
+    <Description>Заряд беспроводных устройств на панели задач</Description>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The program is a single exe: no .config file next to it, debug info embedded for readable log traces. -->
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BatteryStrip.Tests" />
+  </ItemGroup>
+
+</Project>
