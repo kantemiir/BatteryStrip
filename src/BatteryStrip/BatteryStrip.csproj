@@ -17,6 +17,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="BatteryStrip.Tests" />
   </ItemGroup>
 
