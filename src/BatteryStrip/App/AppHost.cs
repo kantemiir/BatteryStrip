@@ -18,12 +18,14 @@ internal sealed class AppHost : IDisposable
     private readonly DeviceStore _store = new(() => DateTime.UtcNow);
     private readonly DeviceManager _devices;
     private readonly TaskbarStrip _strip;
+    private readonly TrayIcons _tray;
     private readonly Timer _saveTimer;
     private readonly EventWaitHandle _exitEvent;
     private readonly RegisteredWaitHandle _exitWait;
     private readonly int _mainThreadId = GetCurrentThreadId();
 
-    public AppHost()
+    /// <param name="forceTray">Show tray icons even while the strip works (for testing the fallback).</param>
+    public AppHost(bool forceTray = false)
     {
         _store.Import(ChargeMemory.Load(ChargeMemory.DefaultPath));
         _saveTimer = new Timer(_ => Save());
@@ -31,7 +33,11 @@ internal sealed class AppHost : IDisposable
 
         _strip = new TaskbarStrip(_store);
         _strip.ContextMenuRequested += ShowMenu;
-        _strip.HealthChanged += broken => Log.Info(broken ? "Fallback: tray icons are not implemented yet." : "Strip is back.");
+
+        _tray = new TrayIcons(_store);
+        _tray.ContextMenuRequested += ShowMenu;
+        _tray.Enabled = forceTray;
+        _strip.HealthChanged += broken => _tray.Enabled = broken || forceTray;
 
         _devices = new DeviceManager(DeviceSources.Create(_store, DeviceNaming.Default));
         _strip.EnvironmentChanged += _devices.RequestRefresh;
@@ -60,6 +66,7 @@ internal sealed class AppHost : IDisposable
     {
         _exitWait.Unregister(null);
         _exitEvent.Dispose();
+        _tray.Dispose();
         _strip.Dispose();
         _devices.Dispose();
         _saveTimer.Dispose();

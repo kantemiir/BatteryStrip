@@ -46,7 +46,15 @@ internal static class TaskbarLocator
             return null;
         }
 
+        // While Explorer starts, the notification area briefly sits at the left edge with no size.
+        int trayLeft = trayRect.Left - taskbarRect.Left;
+        if (trayRect.Width <= 0 || trayLeft < taskbarRect.Width / 2)
+        {
+            problem = "notification area is not in place yet";
+            return null;
+        }
+
         uint dpi = User32.GetDpiForWindow(taskbar);
-        return new TaskbarPlace(taskbar, tray, taskbarRect, trayRect.Left - taskbarRect.Left, taskbarRect.Height, dpi == 0 ? 96 : dpi);
+        return new TaskbarPlace(taskbar, tray, taskbarRect, trayLeft, taskbarRect.Height, dpi == 0 ? 96 : dpi);
     }
 }

@@ -71,6 +71,9 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     protected override async Task RunAsync(CancellationToken cancellation)
     {
         Log.Info($"G435 receiver found ({service.Product}).");
+
+        // Until the first read, show the charge remembered from last time (dimmed), if there is one.
+        Show();
         var gate = new QuietGate();
         int failures = 0;
 

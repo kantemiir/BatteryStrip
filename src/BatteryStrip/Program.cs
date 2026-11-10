@@ -22,7 +22,7 @@ internal static class Program
             int preview = Array.IndexOf(args, "--preview");
             if (preview >= 0 && preview + 1 < args.Length) return Preview.Run(args[preview + 1]);
             if (args.Contains("--exit")) return SignalExit();
-            return RunApp();
+            return RunApp(forceTray: args.Contains("--tray"));
         }
         catch (Exception exception)
         {
@@ -31,7 +31,7 @@ internal static class Program
         }
     }
 
-    private static int RunApp()
+    private static int RunApp(bool forceTray)
     {
         using var single = new Mutex(initiallyOwned: true, @"Local\BatteryStrip.Running", out bool first);
         if (!first)
@@ -47,7 +47,7 @@ internal static class Program
             e.SetObserved();
         };
 
-        using var host = new AppHost();
+        using var host = new AppHost(forceTray);
         host.Run();
         return 0;
     }

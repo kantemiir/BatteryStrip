@@ -46,6 +46,7 @@ internal sealed class TaskbarStrip : IDisposable
     private IReadOnlyList<DeviceSnapshot> _devices = Array.Empty<DeviceSnapshot>();
     private DateTime? _brokenSince;
     private bool _reportedBroken;
+    private string? _lastProblem;
 
     /// <summary>A device on the strip was clicked; the argument is its id, or null for a click between devices.</summary>
     public event Action<string?>? DeviceClicked;
@@ -172,9 +173,14 @@ internal sealed class TaskbarStrip : IDisposable
             long style = (long)User32.GetWindowLongPtr(hwnd, User32.GWL_STYLE);
             style = (style & ~0x80000000L) | User32.WS_CHILD | User32.WS_CLIPSIBLINGS;
             User32.SetWindowLongPtr(hwnd, User32.GWL_STYLE, new IntPtr(style));
-            if (User32.SetParent(hwnd, place.Taskbar) == IntPtr.Zero && Marshal.GetLastWin32Error() != 0)
+            User32.SetParent(hwnd, place.Taskbar);
+            int error = Marshal.GetLastWin32Error();
+            if (User32.GetParent(hwnd) != place.Taskbar)
             {
-                MarkBroken($"SetParent failed ({Marshal.GetLastWin32Error()})");
+                // Start over with a fresh window next time: this one may be stuck to a dead parent.
+                _strip.Dispose();
+                _strip = null;
+                MarkBroken($"SetParent did not take (error {error})");
                 return;
             }
             Log.Info($"Strip attached to the taskbar ({reason}): taskbar {place.TaskbarRect}, tray at {place.TrayLeft}, {place.Dpi} dpi.");
@@ -242,6 +248,7 @@ internal sealed class TaskbarStrip : IDisposable
             || User32.GetParent(_strip.Handle) != place.Taskbar;
         if (lost)
         {
+            if (_lastProblem == null) Log.Info($"Watchdog: the strip lost its place (window {(_strip?.Handle ?? IntPtr.Zero) != IntPtr.Zero}, parent ok {(_strip != null && User32.GetParent(_strip.Handle) == place.Taskbar)}).");
             Attach("watchdog");
             return;
         }
@@ -300,9 +307,10 @@ internal sealed class TaskbarStrip : IDisposable
     private void MarkBroken(string reason)
     {
         DateTime now = DateTime.UtcNow;
-        if (_brokenSince == null)
+        _brokenSince ??= now;
+        if (reason != _lastProblem)
         {
-            _brokenSince = now;
+            _lastProblem = reason;
             Log.Warn($"Strip is not attached: {reason}.");
         }
         if (!_reportedBroken && now - _brokenSince.Value >= GiveUpAfter)
@@ -316,6 +324,7 @@ internal sealed class TaskbarStrip : IDisposable
     private void MarkHealthy()
     {
         _brokenSince = null;
+        _lastProblem = null;
         if (!_reportedBroken) return;
         _reportedBroken = false;
         Log.Info("Strip is attached again.");
