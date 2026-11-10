@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battery strip design</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{--surface-0:#f7f7f5;--surface-1:#efeeea;--text-primary:#1b1b1b;--text-secondary:#5f5e5a;--border:rgba(0,0,0,.12);--border-stronger:rgba(0,0,0,.4);--radius:8px}
+@media (prefers-color-scheme: dark){:root{--surface-0:#1f1f1e;--surface-1:#2a2a28;--text-primary:#f2f2f2;--text-secondary:#b4b2a9;--border:rgba(255,255,255,.14);--border-stronger:rgba(255,255,255,.4)}}
+body{margin:0;padding:24px 16px;background:var(--surface-0);color:var(--text-primary);font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+main{max-width:680px;margin:0 auto}
+h1{font-size:18px;font-weight:600;margin:0 0 4px}
+p.note{font-size:13px;color:var(--text-secondary);margin:0 0 20px}
+button{font:inherit;font-size:13px;color:var(--text-primary);background:transparent;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px;cursor:pointer}
+.tb-w{display:flex;justify-content:flex-end;overflow:hidden;border-radius:var(--radius)}
+.tb,.fly,.zb{--bg:#1c2530;--fg:#f2f2f2;--fg2:#c9d1d9;--dim:#5f6b76;--bo:rgba(242,242,242,.45);--amb:#EF9F27;--red:#E24B4A;--grn:#97C459;--tr:#3a4856}
+.lt .tb,.lt .fly,.lt .zb{--bg:#eef1f4;--fg:#1b1b1b;--fg2:#444441;--dim:#a8adb2;--bo:rgba(27,27,27,.4);--amb:#BA7517;--red:#E24B4A;--grn:#639922;--tr:#d3d7dc}
+.tb{position:relative;flex:0 0 680px;width:680px;height:48px;background:var(--bg);color:var(--fg);font-size:12px}
+.a{position:absolute;top:50%;transform:translate(-50%,-50%);white-space:nowrap;line-height:1}
+.a i{font-size:16px;display:block}
+.clk{text-align:right;line-height:16px}
+.strip{position:absolute;right:288px;top:8px;height:32px;display:flex;align-items:center;gap:14px}
+.dv{display:flex;align-items:center;gap:5px}
+.bt{display:inline-flex;align-items:center}
+.bx{position:relative;width:30px;height:15px;border:1px solid var(--bo);border-radius:5px;box-sizing:border-box}
+.tx{position:absolute;left:0;top:0;width:28px;height:13px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;line-height:1}
+.fl{position:absolute;left:1px;top:1px;bottom:1px;border-radius:3px;overflow:hidden}
+.tx2{left:-1px;top:-1px;color:var(--bg)}
+.nub{width:2px;height:5px;margin-left:1px;border-radius:0 2px 2px 0;background:var(--bo)}
+.zb{height:120px;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:var(--radius)}
+.fly{width:300px;margin:0 0 8px 150px;background:var(--bg);color:var(--fg);border:1px solid var(--tr);border-radius:8px;padding:4px 14px;font-size:13px;box-sizing:border-box}
+.fr{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--tr)}
+.sub{font-size:12px;color:var(--fg2)}
+.ff{display:flex;justify-content:space-between;align-items:center;padding:10px 0 6px;font-size:12px;color:var(--fg2)}
+.row{margin:0 0 20px}
+.lb{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px;font-size:14px;font-weight:600}
+.lb small{font-size:13px;font-weight:400;color:var(--text-secondary)}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ctl button.on{background:var(--surface-1);border-color:var(--border-stronger)}
+</style>
+</head>
+<body>
+<main>
+<h1>Battery strip: agreed design</h1>
+<p class="note">Mockup of the right part of the user's taskbar at 1:1 (1920×48, 100% scale). Fonts and icons here are stand-ins: the app should use Segoe UI Variable and Segoe Fluent Icons.</p>
+<div id="root">
+<div style="display:flex;flex-direction:column;gap:10px;margin:0 0 20px;font-size:13px;color:var(--text-secondary)">
+<div class="ctl" id="st">Мышь <button data-v="n" class="on">82%</button><button data-v="y">18%</button><button data-v="r">7%</button><button data-v="chg">Зарядка</button><button data-v="sleep">Спит</button><button data-v="na">Нет данных</button></div>
+<div style="display:flex;gap:20px;flex-wrap:wrap">
+<div class="ctl" id="ct">Устройств <button data-v="1">1</button><button data-v="2">2</button><button data-v="3" class="on">3</button><button data-v="4">4</button></div>
+<div class="ctl" id="th">Панель <button data-v="dk" class="on">Тёмная</button><button data-v="lt">Светлая</button></div>
+</div></div>
+<div class="row"><div class="lb">Панель задач<small>Масштаб 1:1</small></div>
+<div class="tb-w"><div class="tb"><div class="strip"></div></div></div></div>
+<div class="row"><div class="lb">Вблизи<small>Увеличено в 2,5 раза</small></div>
+<div class="zb"><div class="strip" style="position:static;transform:scale(2.5)"></div></div></div>
+<div class="row" style="margin:0"><div class="lb">Окно по клику<small>Все подключённые устройства</small></div>
+<div class="tb-w" style="background:var(--surface-1)"><div style="flex:0 0 680px;width:680px;padding-top:16px">
+<div class="fly" id="fly"></div>
+<div class="tb"><div class="strip"></div></div>
+</div></div></div>
+</div>
+</main>
+<script>
+var TRAY='<div class="a" style="left:10px;width:24px;height:24px;background:var(--tr);border-radius:5px"></div><div class="a" style="left:415px"><i class="ti ti-chevron-up"></i></div><div class="a" style="left:448px"><i class="ti ti-app-window"></i></div><div class="a" style="left:487px">РУС</div><div class="a" style="left:523px"><i class="ti ti-device-desktop"></i></div><div class="a" style="left:551px"><i class="ti ti-volume"></i></div><div class="a clk" style="left:609px">0:13<br>10.11.2026</div><div class="a" style="left:653px"><i class="ti ti-bell"></i></div>';
+document.querySelectorAll('.tb').forEach(function(t){t.insertAdjacentHTML('afterbegin',TRAY)});
+var D=[{n:'Мышь Lamzu',ic:'ti-mouse',v:82},{n:'Logitech G435',ic:'ti-headphones',v:47},{n:'Геймпад 8BitDo',ic:'ti-device-gamepad-2',v:63},{n:'Клавиатура',ic:'ti-keyboard',v:90}];
+var P={n:[82,''],y:[18,'y'],r:[7,'r'],chg:[34,'chg'],sleep:[82,'sleep'],na:[0,'na']};
+var SUB={'':'Обновлено только что',y:'20% и меньше',r:'10% и меньше, пора зарядить',chg:'Заряжается',sleep:'Спит, данные 2 ч назад',na:'Не передаёт заряд'};
+var st='n',cnt=3;
+function lvl(v,s){if(s)return s;return v<=10?'r':v<=20?'y':''}
+function fc(s){return {y:'var(--amb)',r:'var(--red)',chg:'var(--grn)',sleep:'var(--dim)'}[s]||'var(--fg)'}
+function bat(v,s){
+if(s==='na')return '<span class="bt"><span class="bx"><span class="tx" style="color:var(--fg2)">–</span></span><span class="nub"></span></span>';
+var w=Math.round(26*v/100),tc=s==='sleep'?'var(--dim)':'var(--fg)';
+return '<span class="bt"><span class="bx"><span class="tx" style="color:'+tc+'">'+v+'</span><span class="fl" style="width:'+w+'px;background:'+fc(s)+'"><span class="tx tx2">'+v+'</span></span></span><span class="nub"></span></span>'+(s==='chg'?'<i class="ti ti-bolt" style="font-size:13px;color:var(--grn);margin-left:1px"></i>':'');
+}
+function dev(x){return '<span class="dv"><i class="ti '+x.d.ic+'" style="font-size:16px;color:'+(x.s==='sleep'?'var(--dim)':'var(--fg2)')+'"></i>'+bat(x.v,x.s)+'</span>'}
+function list(){var p=P[st];return D.slice(0,cnt).map(function(d,i){var v=i===0?p[0]:d.v;return {d:d,v:v,s:i===0?lvl(v,p[1]):lvl(v,'')}})}
+function render(){
+var L=list(),h=L.map(dev).join('');
+document.querySelectorAll('.strip').forEach(function(e){e.innerHTML=h});
+document.getElementById('fly').innerHTML=L.map(function(x){return '<div class="fr"><i class="ti '+x.d.ic+'" style="font-size:20px;color:'+(x.s==='sleep'?'var(--dim)':'var(--fg2)')+'"></i><div style="flex:1;min-width:0"><div>'+x.d.n+'</div><div class="sub">'+SUB[x.s]+'</div></div>'+bat(x.v,x.s)+'</div>'}).join('')+'<div class="ff"><span>Предупреждать при 20% и 10%</span><i class="ti ti-settings" style="font-size:16px"></i></div>';
+}
+function grp(id,fn){var g=document.getElementById(id);g.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;g.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});fn(b.dataset.v)})}
+grp('st',function(v){st=v;render()});
+grp('ct',function(v){cnt=+v;render()});
+grp('th',function(v){document.getElementById('root').classList.toggle('lt',v==='lt')});
+render();
+</script>
+</body>
+</html>
