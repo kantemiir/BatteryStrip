@@ -31,6 +31,11 @@ internal sealed class AppHost : IDisposable
     public AppHost(bool forceTray = false)
     {
         _store.Import(ChargeMemory.Load(ChargeMemory.DefaultPath));
+        Notifier.Register();
+        _store.LowBattery += (device, threshold) =>
+        {
+            if (_settings.Warnings) Notifier.LowBattery(device, threshold);
+        };
         _saveTimer = new Timer(_ => Save());
         _store.Changed += () => _saveTimer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
 

@@ -22,6 +22,29 @@ internal static class Program
             int preview = Array.IndexOf(args, "--preview");
             if (preview >= 0 && preview + 1 < args.Length) return Preview.Run(args[preview + 1]);
             if (args.Contains("--exit")) return SignalExit();
+            int icon = Array.IndexOf(args, "--make-icon");
+            if (icon >= 0 && icon + 1 < args.Length)
+            {
+                AppIcon.SaveIco(args[icon + 1]);
+                return 0;
+            }
+            if (args.Contains("--test-notification"))
+            {
+                Notifier.Register();
+                Notifier.Show(AppInfo.DisplayName, "Так будут выглядеть предупреждения о низком заряде.");
+                Thread.Sleep(1000);
+                return 0;
+            }
+            if (args.Contains("--uninstall")) return Installer.Uninstall(quiet: args.Contains("--quiet"));
+            if (args.Contains("--install") && args.Contains("--quiet"))
+            {
+                Installer.Install();
+                return 0;
+            }
+
+            // Started from anywhere but the install folder (a downloaded file): offer to install.
+            // --run skips that, for running a development build in place.
+            if (!Installer.IsRunningInstalled && !args.Contains("--run")) return Installer.RunInteractive();
             return RunApp(forceTray: args.Contains("--tray"));
         }
         catch (Exception exception)

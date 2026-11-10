@@ -10,6 +10,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- The program is a single exe: no .config file next to it, debug info embedded for readable log traces. -->
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
@@ -18,6 +19,22 @@
 
   <ItemGroup>
     <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <!-- Windows Runtime metadata for toast notifications; present on every Windows 10 and 11. -->
+  <ItemGroup>
+    <Reference Include="Windows.Foundation">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Foundation.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.Data">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Data.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.UI">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.UI.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
