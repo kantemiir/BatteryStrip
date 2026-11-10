@@ -59,10 +59,14 @@ internal abstract class DeviceSession : IDisposable
         });
     }
 
+    /// <summary>Asks the session to stop. It may still be finishing an exchange with its device; see <see cref="WaitForEnd"/>.</summary>
     public virtual void Dispose()
     {
         _cancellation.Cancel();
     }
+
+    /// <summary>Blocks until the session has stopped, so the program never exits in the middle of a device exchange.</summary>
+    public bool WaitForEnd(TimeSpan timeout) => _run.Wait(timeout);
 }
 
 /// <summary>Keeps one session per recognised device: starts new ones, stops those whose device is gone, restarts failed ones.</summary>
@@ -92,6 +96,7 @@ internal sealed class SessionSet<TSession> : IDisposable where TSession : Device
     public void Dispose()
     {
         foreach (TSession session in _sessions.Values) session.Dispose();
+        foreach (TSession session in _sessions.Values) session.WaitForEnd(TimeSpan.FromSeconds(6));
         _sessions.Clear();
     }
 }
