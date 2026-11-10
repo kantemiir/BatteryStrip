@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using BatteryStrip.Core;
 using BatteryStrip.Devices;
+using BatteryStrip.Flyout;
 using BatteryStrip.Taskbar;
 
 namespace BatteryStrip.App;
@@ -16,6 +17,8 @@ internal sealed class AppHost : IDisposable
     private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(10);
 
     private readonly DeviceStore _store = new(() => DateTime.UtcNow);
+    private readonly Settings _settings = new(Settings.DefaultPath);
+    private readonly FlyoutWindow _flyout;
     private readonly DeviceManager _devices;
     private readonly TaskbarStrip _strip;
     private readonly TrayIcons _tray;
@@ -34,12 +37,27 @@ internal sealed class AppHost : IDisposable
         _strip = new TaskbarStrip(_store);
         _strip.ContextMenuRequested += ShowMenu;
 
+        _flyout = FlyoutWindow.StartThread(_store, new FlyoutActions(
+            GetWarnings: () => _settings.Warnings,
+            SetWarnings: value => _settings.Warnings = value,
+            RefreshDevices: () => _devices?.RequestRefresh(),
+            OpenLog: OpenLog,
+            Exit: RequestExit));
+        _strip.DeviceClicked += _ =>
+        {
+            if (_strip.ScreenBounds is User32.RECT bounds) _flyout.Toggle(bounds);
+        };
+
         _tray = new TrayIcons(_store);
         _tray.ContextMenuRequested += ShowMenu;
+        _tray.Clicked += _ =>
+        {
+            if (User32.GetCursorPos(out User32.POINT cursor)) _flyout.Toggle(new User32.RECT { Left = cursor.X, Top = cursor.Y, Right = cursor.X, Bottom = cursor.Y });
+        };
         _tray.Enabled = forceTray;
         _strip.HealthChanged += broken => _tray.Enabled = broken || forceTray;
 
-        _devices = new DeviceManager(DeviceSources.Create(_store, DeviceNaming.Default));
+        _devices = new DeviceManager(DeviceSources.Create(_store, new DeviceNaming(_settings.DeviceNames)));
         _strip.EnvironmentChanged += _devices.RequestRefresh;
         _devices.Start();
 
@@ -67,6 +85,7 @@ internal sealed class AppHost : IDisposable
         _exitWait.Unregister(null);
         _exitEvent.Dispose();
         _tray.Dispose();
+        _flyout.Dispose();
         _strip.Dispose();
         _devices.Dispose();
         _saveTimer.Dispose();
@@ -74,6 +93,18 @@ internal sealed class AppHost : IDisposable
     }
 
     private void Save() => ChargeMemory.Save(ChargeMemory.DefaultPath, _store.Export());
+
+    private static void OpenLog()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(System.IO.Path.Combine(AppInfo.LogDirectory, "app.log")) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or System.IO.FileNotFoundException)
+        {
+            Log.Warn($"Cannot open the log: {exception.Message}");
+        }
+    }
 
     private void ShowMenu(int x, int y)
     {

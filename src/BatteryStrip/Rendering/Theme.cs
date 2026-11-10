@@ -26,7 +26,7 @@ internal sealed record Palette(
         Critical: Rgba.FromHex(0xE24B4A),
         Charging: Rgba.FromHex(0x97C459),
         Divider: Rgba.FromHex(0xFFFFFF, 0.08),
-        Background: Rgba.FromHex(0x202020));
+        Background: Rgba.FromHex(0x2C2C2C));
 
     public static Palette Light { get; } = new(
         IsLight: true,
@@ -38,7 +38,7 @@ internal sealed record Palette(
         Critical: Rgba.FromHex(0xE24B4A),
         Charging: Rgba.FromHex(0x639922),
         Divider: Rgba.FromHex(0x000000, 0.08),
-        Background: Rgba.FromHex(0xF3F3F3));
+        Background: Rgba.FromHex(0xF9F9F9));
 }
 
 internal static class Theme

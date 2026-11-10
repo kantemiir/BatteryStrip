@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -12,15 +13,18 @@ namespace BatteryStrip.Taskbar;
 /// </summary>
 internal abstract class NativeWindow : IDisposable
 {
+    // Windows of several threads (the strip, the flyout) share these, hence the concurrent map and the lock.
     private static readonly Dictionary<string, User32.WndProc> RegisteredClasses = new();
-    private static readonly Dictionary<IntPtr, NativeWindow> Live = new();
+    private static readonly ConcurrentDictionary<IntPtr, NativeWindow> Live = new();
+
+    [ThreadStatic]
     private static NativeWindow? _creating;
 
     public IntPtr Handle { get; private set; }
 
-    protected void Create(string className, int exStyle, int style, IntPtr parent, int x = 0, int y = 0, int width = 1, int height = 1)
+    protected void Create(string className, int exStyle, int style, IntPtr parent, int x = 0, int y = 0, int width = 1, int height = 1, int classStyle = 0)
     {
-        RegisterClass(className);
+        RegisterClass(className, classStyle);
         _creating = this;
         try
         {
@@ -49,13 +53,19 @@ internal abstract class NativeWindow : IDisposable
     {
     }
 
-    private static void RegisterClass(string className)
+    private static void RegisterClass(string className, int classStyle)
+    {
+        lock (RegisteredClasses) RegisterClassLocked(className, classStyle);
+    }
+
+    private static void RegisterClassLocked(string className, int classStyle)
     {
         if (RegisteredClasses.ContainsKey(className)) return;
         User32.WndProc proc = Dispatch;
         var windowClass = new User32.WNDCLASSEX
         {
             cbSize = Marshal.SizeOf(typeof(User32.WNDCLASSEX)),
+            style = classStyle,
             lpfnWndProc = proc,
             hInstance = User32.GetModuleHandle(null),
             hCursor = User32.LoadCursor(IntPtr.Zero, new IntPtr(32512)), // IDC_ARROW
@@ -80,7 +90,7 @@ internal abstract class NativeWindow : IDisposable
             {
                 if (message == User32.WM_DESTROY)
                 {
-                    Live.Remove(hwnd);
+                    Live.TryRemove(hwnd, out _);
                     window.Handle = IntPtr.Zero;
                     window.OnDestroyed();
                 }

@@ -65,25 +65,37 @@ internal sealed class StripPainter(GlyphCache glyphs)
         return width;
     }
 
-    private float DeviceWidth(DeviceSnapshot device, float scale)
+    private float DeviceWidth(DeviceSnapshot device, float scale) =>
+        (float)Math.Ceiling((IconBox + IconGap) * scale + BatteryWidth(device, scale));
+
+    /// <summary>Width of a battery with its nub and, when charging, the bolt.</summary>
+    public float BatteryWidth(DeviceSnapshot device, float scale)
     {
-        float width = (IconBox + IconGap + BodyWidth + NubGap + NubWidth) * scale;
+        float width = (BodyWidth + NubGap + NubWidth) * scale;
         if (device.IsCharging && device.Percent != null) width += BoltGap * scale + glyphs.Get(GlyphFont.Icons, Px(BoltFont, scale), Bolt).Width;
         return (float)Math.Ceiling(width);
+    }
+
+    /// <summary>Draws a device icon centred in a square box of <paramref name="box"/> pixels.</summary>
+    public void PaintIcon(Surface surface, DeviceSnapshot device, Palette palette, float fontSize, float left, float middle, float box)
+    {
+        GlyphMask icon = glyphs.Get(GlyphFont.Icons, (float)Math.Round(fontSize * 2) / 2, IconOf(device.Kind));
+        surface.DrawMask(icon, (int)Math.Round(left + (box - icon.Width) / 2), (int)Math.Round(middle - icon.Height / 2f),
+            device.IsAsleep ? palette.Dimmed : palette.SecondaryText);
     }
 
     private void PaintDevice(Surface surface, DeviceSnapshot device, Palette palette, float scale, float left)
     {
         float middle = surface.Height / 2f;
+        PaintIcon(surface, device, palette, IconFont * scale, left, middle, IconBox * scale);
+        PaintBattery(surface, device, palette, scale, left + (IconBox + IconGap) * scale, middle);
+    }
 
-        // Icon, centred in its box.
-        GlyphMask icon = glyphs.Get(GlyphFont.Icons, Px(IconFont, scale), IconOf(device.Kind));
-        float iconBox = IconBox * scale;
-        surface.DrawMask(icon, (int)Math.Round(left + (iconBox - icon.Width) / 2), (int)Math.Round(middle - icon.Height / 2f),
-            device.IsAsleep ? palette.Dimmed : palette.SecondaryText);
-
+    /// <summary>Draws the battery with its left edge at <paramref name="left"/>, centred on <paramref name="middle"/>.</summary>
+    public void PaintBattery(Surface surface, DeviceSnapshot device, Palette palette, float scale, float left, float middle)
+    {
         // Battery body, on whole pixels so the 1 px outline stays sharp.
-        float bodyLeft = (float)Math.Round(left + (IconBox + IconGap) * scale);
+        float bodyLeft = (float)Math.Round(left);
         float bodyTop = (float)Math.Round(middle - BodyHeight * scale / 2);
         var body = new RectF(bodyLeft, bodyTop, (float)Math.Round(BodyWidth * scale), (float)Math.Round(BodyHeight * scale));
         float line = Math.Max(1, (float)Math.Round(scale));
