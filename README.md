@@ -18,7 +18,7 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 - **Notifications** when a device drops to 20% and to 10%, once each.
 - **Follows the taskbar**: light or dark theme, Explorer restarts, sleep, a crowded taskbar (the icons go first,
   then the devices move to tray icons).
-- **Small and quiet**: one 200 KB file, about 25 MB of memory, close to zero CPU. No administrator rights,
+- **Small and quiet**: one 300 KB file, about 25 MB of memory, close to zero CPU. No administrator rights,
   no runtime to install, no ads, no telemetry. The only network access is an optional daily update check.
 - **Languages**: Russian and English, following Windows.
 
