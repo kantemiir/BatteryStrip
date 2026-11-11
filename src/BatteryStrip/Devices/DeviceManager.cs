@@ -18,11 +18,12 @@ internal sealed class DeviceManager : IDisposable
     private readonly SemaphoreSlim _refreshRequested = new(0);
     private readonly CancellationTokenSource _cancellation = new();
     private Task _worker = Task.CompletedTask;
+    private int _pendingWake = -1;
 
     public DeviceManager(IReadOnlyList<IDeviceSource> sources)
     {
         _sources = sources;
-        _watcher.Changed += RequestRefresh;
+        _watcher.Changed += () => RequestRefresh();
     }
 
     public void Start()
@@ -31,9 +32,20 @@ internal sealed class DeviceManager : IDisposable
         RequestRefresh();
     }
 
-    /// <summary>Asks for a rescan, for example after the computer woke up. Safe to call from any thread.</summary>
-    public void RequestRefresh()
+    /// <summary>Asks for a rescan of the connected devices. Safe to call from any thread.</summary>
+    /// <param name="reason">Also asks the sources to read their devices soon; a user refresh wins over a resume.</param>
+    public void RequestRefresh(WakeReason? reason = null)
     {
+        if (reason is WakeReason wake)
+        {
+            int current;
+            do
+            {
+                current = Volatile.Read(ref _pendingWake);
+                if (current >= (int)wake) break;
+            }
+            while (Interlocked.CompareExchange(ref _pendingWake, (int)wake, current) != current);
+        }
         try { _refreshRequested.Release(); }
         catch (ObjectDisposedException) { }
     }
@@ -56,10 +68,29 @@ internal sealed class DeviceManager : IDisposable
                 await _refreshRequested.WaitAsync(_cancellation.Token).ConfigureAwait(false);
                 while (_refreshRequested.CurrentCount > 0) _refreshRequested.Wait(0);
                 RefreshAll();
+
+                int wake = Interlocked.Exchange(ref _pendingWake, -1);
+                if (wake >= 0) WakeAll((WakeReason)wake);
             }
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    private void WakeAll(WakeReason reason)
+    {
+        Log.Info($"Devices woken: {reason}.");
+        foreach (IDeviceSource source in _sources)
+        {
+            try
+            {
+                source.Wake(reason);
+            }
+            catch (Exception exception)
+            {
+                Log.Error($"{source.GetType().Name} failed to wake", exception);
+            }
         }
     }
 

@@ -33,7 +33,14 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
     private static readonly TimeSpan ReplyPoll = TimeSpan.FromMilliseconds(30);
     private const int MaxStaleReplies = 16;
 
+    private const int TranscriptBytes = 24;
+
+    private readonly System.Collections.Generic.List<string> _transcript = new();
+    private readonly System.Diagnostics.Stopwatch _clock = new();
     private byte _sequence;
+
+    /// <summary>Every frame of the last read, for the log when something went wrong.</summary>
+    public string Transcript => string.Join(Environment.NewLine, _transcript);
 
     /// <summary>
     /// Reads the battery voltage. Takes about two seconds, during which the headset's audio is paused.
@@ -41,6 +48,8 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
     /// </summary>
     public async Task<G435Reading> ReadBatteryAsync()
     {
+        _transcript.Clear();
+        _clock.Restart();
         _sequence = 1;
         int? originalMode = null;
         bool modeChanged = false;
@@ -106,14 +115,30 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
     /// <summary>Sends one report and waits for the receiver's acknowledgement byte.</summary>
     private async Task<byte> SendAsync(byte[] frame)
     {
+        Record("SET", frame);
         feature.Set(frame);
         DateTime deadline = DateTime.UtcNow + AckTimeout;
         while (DateTime.UtcNow < deadline)
         {
             byte[]? report = await input.ReadAsync(AckPoll, CancellationToken.None).ConfigureAwait(false);
-            if (report is { Length: >= 2 } && report[0] == G435Protocol.ReportId) return report[1];
+            if (report == null) continue;
+            Record("IN ", report);
+            if (report.Length >= 2 && report[0] == G435Protocol.ReportId) return report[1];
         }
         throw new TimeoutException("the receiver did not acknowledge a command");
+    }
+
+    private byte[] GetFeature()
+    {
+        byte[] reply = feature.Get(G435Protocol.ReportId, G435Protocol.FeatureLength);
+        if (reply[1] != G435Protocol.NoReplyYet) Record("GET", reply);
+        return reply;
+    }
+
+    private void Record(string direction, byte[] frame)
+    {
+        int count = Math.Min(frame.Length, TranscriptBytes);
+        _transcript.Add($"  {_clock.ElapsedMilliseconds,5} ms {direction} {BitConverter.ToString(frame, 0, count).Replace('-', ' ')}");
     }
 
     /// <summary>Sends a command and polls for a reply the parser accepts. Returns null when none arrives in time.</summary>
@@ -126,7 +151,7 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
         DateTime deadline = DateTime.UtcNow + ReplyTimeout;
         while (DateTime.UtcNow < deadline)
         {
-            byte[] reply = feature.Get(G435Protocol.ReportId, G435Protocol.FeatureLength);
+            byte[] reply = GetFeature();
             if (reply[1] == G435Protocol.NoReplyYet)
             {
                 await Task.Delay(ReplyPoll).ConfigureAwait(false);
@@ -142,7 +167,7 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
     {
         for (int i = 0; i < MaxStaleReplies; i++)
         {
-            if (feature.Get(G435Protocol.ReportId, G435Protocol.FeatureLength)[1] == G435Protocol.NoReplyYet) return;
+            if (GetFeature()[1] == G435Protocol.NoReplyYet) return;
         }
     }
 }

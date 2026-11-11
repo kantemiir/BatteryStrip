@@ -1,50 +1,52 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using BatteryStrip.App;
 
 namespace BatteryStrip.Devices.G435;
 
 /// <summary>What Windows audio is doing with one physical device right now.</summary>
-/// <param name="HasOpenStreams">Some program is playing to the device or recording from it.</param>
+/// <param name="HasOpenStreams">Some program has a playback or recording stream open on the device.</param>
 /// <param name="IsAudible">The playback level is above digital silence.</param>
 /// <param name="MicrophoneInUse">Some program is recording from the device.</param>
 internal readonly record struct AudioState(bool HasOpenStreams, bool IsAudible, bool MicrophoneInUse);
 
-/// <summary>Asks Core Audio whether the headset's speakers or microphone are in use. Read-only.</summary>
-internal static class AudioActivity
+/// <summary>
+/// Watches the speakers and microphone of one physical device through Core Audio. Read-only. The endpoints
+/// are looked up once and kept, so a sample costs a few cheap calls; they are looked up again after any
+/// error or once a minute. Use from one thread at a time.
+/// </summary>
+internal sealed class AudioActivity(Guid containerId) : IDisposable
 {
-    /// <summary>
-    /// State of all audio endpoints that belong to the physical device with this container id.
-    /// Returns null when Windows audio cannot be queried; callers must then assume the device is busy.
-    /// </summary>
-    public static AudioState? Query(Guid containerId)
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(1);
+
+    private readonly List<Endpoint> _endpoints = new();
+    private DateTime _resolvedAt = DateTime.MinValue;
+
+    private sealed class Endpoint(bool isCapture, IAudioSessionManager2 sessions, IAudioMeterInformation? meter)
     {
-        object? enumeratorObject = null;
-        IMMDeviceCollection? endpoints = null;
+        public bool IsCapture { get; } = isCapture;
+        public IAudioSessionManager2 Sessions { get; } = sessions;
+        public IAudioMeterInformation? Meter { get; } = meter;
+    }
+
+    /// <summary>Current state; null when Windows audio cannot be queried, which callers treat as busy.</summary>
+    public AudioState? Sample()
+    {
         try
         {
-            enumeratorObject = new MMDeviceEnumerator();
-            var enumerator = (IMMDeviceEnumerator)enumeratorObject;
-            Check(enumerator.EnumAudioEndpoints(DataFlowAll, DeviceStateActive, out endpoints));
-            Check(endpoints.GetCount(out int count));
+            if (DateTime.UtcNow - _resolvedAt > RefreshEvery) Resolve();
 
             bool open = false, audible = false, microphone = false;
-            for (int i = 0; i < count; i++)
+            foreach (Endpoint endpoint in _endpoints)
             {
-                Check(endpoints.Item(i, out IMMDevice endpoint));
-                try
+                bool hasSessions = CountActiveSessions(endpoint.Sessions) > 0;
+                open |= hasSessions;
+                if (endpoint.IsCapture) microphone |= hasSessions;
+                else if (endpoint.Meter != null)
                 {
-                    if (ReadContainerId(endpoint) != containerId) continue;
-
-                    Check(((IMMEndpoint)endpoint).GetDataFlow(out int flow));
-                    bool hasSessions = CountActiveSessions(endpoint) > 0;
-                    open |= hasSessions;
-                    if (flow == DataFlowCapture) microphone |= hasSessions;
-                    else audible |= ReadPeak(endpoint) > 0f;
-                }
-                finally
-                {
-                    Marshal.ReleaseComObject(endpoint);
+                    Check(endpoint.Meter.GetPeakValue(out float peak));
+                    audible |= peak > 0f;
                 }
             }
             return new AudioState(open, audible, microphone);
@@ -52,13 +54,66 @@ internal static class AudioActivity
         catch (Exception exception) when (exception is COMException or InvalidCastException or UnauthorizedAccessException)
         {
             Log.Warn($"Audio state is unavailable: {exception.Message}");
+            Release();
             return null;
+        }
+    }
+
+    public void Dispose() => Release();
+
+    private void Resolve()
+    {
+        Release();
+        object enumeratorObject = new MMDeviceEnumerator();
+        IMMDeviceCollection? collection = null;
+        try
+        {
+            var enumerator = (IMMDeviceEnumerator)enumeratorObject;
+            Check(enumerator.EnumAudioEndpoints(DataFlowAll, DeviceStateActive, out collection));
+            Check(collection.GetCount(out int count));
+            for (int i = 0; i < count; i++)
+            {
+                Check(collection.Item(i, out IMMDevice device));
+                try
+                {
+                    if (ReadContainerId(device) != containerId) continue;
+                    Check(((IMMEndpoint)device).GetDataFlow(out int flow));
+                    bool isCapture = flow == DataFlowCapture;
+
+                    Guid managerId = typeof(IAudioSessionManager2).GUID;
+                    Check(device.Activate(ref managerId, ClsCtxAll, IntPtr.Zero, out object manager));
+                    IAudioMeterInformation? meter = null;
+                    if (!isCapture)
+                    {
+                        Guid meterId = typeof(IAudioMeterInformation).GUID;
+                        Check(device.Activate(ref meterId, ClsCtxAll, IntPtr.Zero, out object meterObject));
+                        meter = (IAudioMeterInformation)meterObject;
+                    }
+                    _endpoints.Add(new Endpoint(isCapture, (IAudioSessionManager2)manager, meter));
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(device);
+                }
+            }
+            _resolvedAt = DateTime.UtcNow;
         }
         finally
         {
-            if (endpoints != null) Marshal.ReleaseComObject(endpoints);
-            if (enumeratorObject != null) Marshal.ReleaseComObject(enumeratorObject);
+            if (collection != null) Marshal.ReleaseComObject(collection);
+            Marshal.ReleaseComObject(enumeratorObject);
         }
+    }
+
+    private void Release()
+    {
+        foreach (Endpoint endpoint in _endpoints)
+        {
+            Marshal.ReleaseComObject(endpoint.Sessions);
+            if (endpoint.Meter != null) Marshal.ReleaseComObject(endpoint.Meter);
+        }
+        _endpoints.Clear();
+        _resolvedAt = DateTime.MinValue;
     }
 
     private static Guid ReadContainerId(IMMDevice endpoint)
@@ -85,14 +140,11 @@ internal static class AudioActivity
         }
     }
 
-    private static int CountActiveSessions(IMMDevice endpoint)
+    private static int CountActiveSessions(IAudioSessionManager2 manager)
     {
-        Guid managerId = typeof(IAudioSessionManager2).GUID;
-        Check(endpoint.Activate(ref managerId, ClsCtxAll, IntPtr.Zero, out object managerObject));
-        IAudioSessionEnumerator? sessions = null;
+        Check(manager.GetSessionEnumerator(out IAudioSessionEnumerator sessions));
         try
         {
-            Check(((IAudioSessionManager2)managerObject).GetSessionEnumerator(out sessions));
             Check(sessions.GetCount(out int count));
             int active = 0;
             for (int i = 0; i < count; i++)
@@ -112,23 +164,7 @@ internal static class AudioActivity
         }
         finally
         {
-            if (sessions != null) Marshal.ReleaseComObject(sessions);
-            Marshal.ReleaseComObject(managerObject);
-        }
-    }
-
-    private static float ReadPeak(IMMDevice endpoint)
-    {
-        Guid meterId = typeof(IAudioMeterInformation).GUID;
-        Check(endpoint.Activate(ref meterId, ClsCtxAll, IntPtr.Zero, out object meterObject));
-        try
-        {
-            Check(((IAudioMeterInformation)meterObject).GetPeakValue(out float peak));
-            return peak;
-        }
-        finally
-        {
-            Marshal.ReleaseComObject(meterObject);
+            Marshal.ReleaseComObject(sessions);
         }
     }
 

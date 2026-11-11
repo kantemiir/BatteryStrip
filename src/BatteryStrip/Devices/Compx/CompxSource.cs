@@ -68,6 +68,11 @@ internal sealed class CompxSource(DeviceStore store, DeviceNaming naming) : IDev
         }
     }
 
+    public void Wake(WakeReason reason)
+    {
+        if (reason == WakeReason.UserRefresh) _links.ForEach(link => link.AskNow());
+    }
+
     public void Dispose() => _links.Dispose();
 
     /// <summary>The receiver only calls itself "2.4G Wireless Receiver", so the brand is guessed from the vendor software.</summary>
@@ -174,6 +179,9 @@ internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCol
             }
         }
     }
+
+    /// <summary>Sends a battery request right away; the reply arrives through the running session.</summary>
+    public void AskNow() => Ask();
 
     private void Ask()
     {

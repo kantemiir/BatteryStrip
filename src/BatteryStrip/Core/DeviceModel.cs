@@ -34,8 +34,15 @@ internal abstract record DeviceReport
     /// <param name="IsEstimate">True when the percent is derived from voltage, not reported by the device.</param>
     public sealed record Charge(int Percent, bool IsCharging, bool IsEstimate = false) : DeviceReport;
 
-    /// <summary>The device is connected but does not answer; the last known value stays on screen.</summary>
-    public sealed record Asleep : DeviceReport;
+    /// <summary>The device is connected but does not answer; the last known value stays on screen, dimmed.</summary>
+    /// <param name="Note">Replaces the word "asleep" in the flyout, for example "waiting for silence".</param>
+    public sealed record Asleep(string? Note = null) : DeviceReport;
+
+    /// <summary>
+    /// The device is on but cannot be read right now. The last value stays as it is while it is recent,
+    /// and is dimmed with <paramref name="Note"/> once it is older than <see cref="DeviceStore.StaleAfter"/>.
+    /// </summary>
+    public sealed record Stale(string Note) : DeviceReport;
 
     /// <summary>The device is connected and has no way to report its charge.</summary>
     public sealed record Unsupported : DeviceReport;
@@ -53,4 +60,5 @@ internal sealed record DeviceSnapshot(
     bool IsAsleep,
     bool IsEstimate,
     ChargeLevel Level,
-    DateTime? UpdatedUtc);
+    DateTime? UpdatedUtc,
+    string? Note = null);

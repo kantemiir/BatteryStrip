@@ -4,13 +4,14 @@ namespace BatteryStrip.Devices.G435;
 
 /// <summary>
 /// Decides when the headset may be read. A read pauses its audio link for about two seconds, so it is
-/// allowed only when nobody would hear that: no program has a stream open for a short while, or streams
-/// are open but have been digitally silent for a long while. A microphone in use always blocks it.
+/// allowed only when nobody would hear that: no program has had a stream open for a short while, or the
+/// open streams have played pure digital silence for a while (a paused video, a pause between tracks).
+/// A microphone in use always blocks it.
 /// </summary>
 internal sealed class QuietGate
 {
-    public static readonly TimeSpan IdleTime = TimeSpan.FromSeconds(15);
-    public static readonly TimeSpan SilentTime = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan IdleTime = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan SilentTime = TimeSpan.FromSeconds(20);
 
     private DateTime? _idleSince;
     private DateTime? _silentSince;

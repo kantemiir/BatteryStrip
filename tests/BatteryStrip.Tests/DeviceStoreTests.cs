@@ -151,6 +151,34 @@ public class DeviceStoreTests
     }
 
     [Fact]
+    public void A_device_that_is_on_but_unreadable_keeps_a_recent_value_bright()
+    {
+        DeviceStore store = NewStore();
+        store.Connect(Headset);
+        store.Report(Headset.Id, new DeviceReport.Charge(77, false, IsEstimate: true));
+
+        _now = _now.AddHours(1);
+        store.Report(Headset.Id, new DeviceReport.Stale("Ждёт тишины в наушниках"));
+        Assert.False(Assert.Single(store.Snapshot).IsAsleep);
+
+        _now = _now.AddHours(3);
+        store.Report(Headset.Id, new DeviceReport.Stale("Ждёт тишины в наушниках"));
+        DeviceSnapshot shown = Assert.Single(store.Snapshot);
+        Assert.True(shown.IsAsleep);
+        Assert.Equal("Ждёт тишины в наушниках, данные 4 часа назад", StatusText.For(shown, _now));
+    }
+
+    [Fact]
+    public void A_fresh_reading_clears_the_note()
+    {
+        DeviceStore store = NewStore();
+        store.Connect(Headset);
+        store.Report(Headset.Id, new DeviceReport.Asleep("Нет ответа"));
+        store.Report(Headset.Id, new DeviceReport.Charge(70, false));
+        Assert.Null(Assert.Single(store.Snapshot).Note);
+    }
+
+    [Fact]
     public void Changed_fires_only_when_something_visible_changed()
     {
         int changes = 0;

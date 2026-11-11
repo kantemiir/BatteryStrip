@@ -258,7 +258,7 @@ internal sealed class FlyoutWindow : NativeWindow
             AppendMenu(menu, App.Autostart.IsEnabled ? MF_CHECKED : 0, new IntPtr(Autostart), "Запускать вместе с Windows");
             AppendMenu(menu, _actions.GetWarnings() ? MF_CHECKED : 0, new IntPtr(Warnings), "Предупреждать о низком заряде");
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
-            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить устройства");
+            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить заряд сейчас");
             AppendMenu(menu, 0, new IntPtr(OpenLog), "Открыть журнал");
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
             AppendMenu(menu, 0, new IntPtr(Exit), "Выход");

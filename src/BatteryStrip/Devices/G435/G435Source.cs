@@ -34,33 +34,57 @@ internal sealed class G435Source(DeviceStore store, DeviceNaming naming) : IDevi
         _sessions.Reconcile(wanted);
     }
 
+    public void Wake(WakeReason reason) => _sessions.ForEach(session => session.Wake(reason));
+
     public void Dispose() => _sessions.Dispose();
 }
 
 /// <summary>
-/// Follows one G435 receiver. Each battery read briefly pauses the headset's audio, so reads are rare
-/// and wait for a quiet moment (see <see cref="QuietGate"/>).
+/// Follows one G435 receiver. Each battery read briefly pauses the headset's audio, so scheduled reads
+/// are rare and wait for a quiet moment (see <see cref="QuietGate"/>). A read the user asks for happens at once.
 /// </summary>
 internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor, HidCollection service) : DeviceSession
 {
-    /// <summary>Time between reads while the headset is on.</summary>
+    /// <summary>Time between scheduled reads while the headset is on.</summary>
     private static readonly TimeSpan ReadInterval = TimeSpan.FromMinutes(30);
 
     /// <summary>Time between checks while the headset is off, to notice it being switched on.</summary>
     private static readonly TimeSpan OffCheckInterval = TimeSpan.FromMinutes(2);
 
-    private static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(1);
-    private const int MaxQuickRetries = 3;
+    /// <summary>A failed read is retried at once (the quiet moment usually lasts), then after a minute.</summary>
+    private static readonly TimeSpan QuickRetry = TimeSpan.FromSeconds(5);
 
-    private static readonly TimeSpan GatePoll = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan SlowRetry = TimeSpan.FromMinutes(1);
+    private const int MaxRetries = 3;
+
+    /// <summary>After waking from sleep the receiver needs a moment before it answers reliably.</summary>
+    private static readonly TimeSpan SettleAfterResume = TimeSpan.FromSeconds(20);
+
+    private static readonly TimeSpan AudioPoll = TimeSpan.FromSeconds(1);
 
     /// <summary>Audio playing into a headset believed to be off for this long means it is probably on.</summary>
     private static readonly TimeSpan BusyMeansOn = TimeSpan.FromSeconds(20);
 
+    private const string WaitingNote = "Ждёт тишины в наушниках";
+    private const string NoAnswerNote = "Нет ответа";
+
     private readonly EstimateSmoother _smoother = new();
+    private readonly SemaphoreSlim _wake = new(0);
+    private volatile bool _readNow;
+    private DateTime _notBefore = DateTime.MinValue;
     private bool _shown;
+    private bool _believedOff;
 
     protected override string Name => "G435";
+
+    /// <summary>Cuts the current wait short. A user refresh reads at once, even while audio plays.</summary>
+    public void Wake(WakeReason reason)
+    {
+        if (reason == WakeReason.UserRefresh) _readNow = true;
+        else _notBefore = DateTime.UtcNow + SettleAfterResume;
+        try { _wake.Release(); }
+        catch (ObjectDisposedException) { }
+    }
 
     public override void Dispose()
     {
@@ -74,13 +98,14 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
 
         // Until the first read, show the charge remembered from last time (dimmed), if there is one.
         Show();
+        using var audio = new AudioActivity(service.ContainerId);
         var gate = new QuietGate();
         int failures = 0;
 
         while (!cancellation.IsCancellationRequested)
         {
-            await WaitForQuietAsync(gate, cancellation).ConfigureAwait(false);
-            G435Reading reading = await ReadAsync().ConfigureAwait(false);
+            bool forced = await WaitForTurnAsync(audio, gate, cancellation).ConfigureAwait(false);
+            G435Reading reading = await ReadAsync(forced).ConfigureAwait(false);
             gate.Reset();
 
             TimeSpan pause;
@@ -88,15 +113,18 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
             {
                 case G435Reading.Voltage voltage:
                     failures = 0;
+                    _believedOff = false;
                     int percent = _smoother.Apply(G435Protocol.MillivoltsToPercent(voltage.Millivolts));
                     Show();
                     store.Report(descriptor.Id, new DeviceReport.Charge(percent, IsCharging: false, IsEstimate: true));
-                    Log.Info($"G435: {voltage.Millivolts} mV, about {percent} %.");
+                    Log.Info($"G435: {voltage.Millivolts} mV, about {percent} %{(forced ? " (asked by the user)" : "")}.");
                     pause = ReadInterval;
                     break;
 
                 case G435Reading.HeadsetOff:
                     failures = 0;
+                    if (!_believedOff) Log.Info("G435: the headset is off or out of range.");
+                    _believedOff = true;
                     Hide();
                     _smoother.Reset();
                     pause = OffCheckInterval;
@@ -104,44 +132,66 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
 
                 default:
                     failures++;
-                    Log.Warn($"G435: read failed ({((G435Reading.Failed)reading).Reason}), attempt {failures}.");
-                    pause = failures <= MaxQuickRetries ? RetryInterval : ReadInterval;
+                    pause = failures == 1 ? QuickRetry : failures <= MaxRetries ? SlowRetry : ReadInterval;
+                    if (_shown) store.Report(descriptor.Id, new DeviceReport.Stale(NoAnswerNote));
                     break;
             }
 
-            await Task.Delay(pause, cancellation).ConfigureAwait(false);
+            await PauseAsync(pause, cancellation).ConfigureAwait(false);
         }
     }
 
-    /// <summary>Returns when the headset is unused and a read cannot be heard.</summary>
-    private async Task WaitForQuietAsync(QuietGate gate, CancellationToken cancellation)
+    /// <summary>Waits for a pause, cut short by <see cref="Wake"/>.</summary>
+    private async Task PauseAsync(TimeSpan pause, CancellationToken cancellation)
+    {
+        if (_readNow) return;
+        await Task.WhenAny(Task.Delay(pause, cancellation), _wake.WaitAsync(cancellation)).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Returns when a read may start: the headset is quiet, or the user asked. True for the latter.</summary>
+    private async Task<bool> WaitForTurnAsync(AudioActivity audio, QuietGate gate, CancellationToken cancellation)
     {
         DateTime? busySince = null;
+        bool markedWaiting = false;
         while (true)
         {
-            DateTime now = DateTime.UtcNow;
-            AudioState? audio = AudioActivity.Query(service.ContainerId);
-            if (gate.Observe(audio, now)) return;
-
-            // While it cannot be asked, a headset that is being played to is shown with its last known charge.
-            bool busy = audio is not AudioState state || state.HasOpenStreams;
-            busySince = busy ? busySince ?? now : null;
-            if (!_shown && busySince is DateTime since && now - since >= BusyMeansOn)
+            if (_readNow)
             {
-                Show();
-                store.Report(descriptor.Id, new DeviceReport.Asleep());
+                _readNow = false;
+                return true;
             }
 
-            await Task.Delay(GatePoll, cancellation).ConfigureAwait(false);
+            DateTime now = DateTime.UtcNow;
+            AudioState? state = audio.Sample();
+            if (now >= _notBefore && gate.Observe(state, now)) return false;
+
+            // While it cannot be asked, a headset that is being played to is shown with its last known charge.
+            bool busy = state is not AudioState s || s.HasOpenStreams;
+            busySince = busy ? busySince ?? now : null;
+            if (busySince is DateTime since && now - since >= BusyMeansOn && !markedWaiting)
+            {
+                markedWaiting = true;
+                Show();
+                store.Report(descriptor.Id, new DeviceReport.Stale(WaitingNote));
+            }
+
+            await Task.WhenAny(Task.Delay(AudioPoll, cancellation), _wake.WaitAsync(cancellation)).ConfigureAwait(false);
+            cancellation.ThrowIfCancellationRequested();
         }
     }
 
-    private async Task<G435Reading> ReadAsync()
+    private async Task<G435Reading> ReadAsync(bool forced)
     {
         using HidInputPort? input = HidInputPort.Open(service);
         using HidFeaturePort? feature = HidFeaturePort.Open(service);
         if (input == null || feature == null) return new G435Reading.Failed("cannot open the receiver");
-        return await new G435Bridge(feature, input).ReadBatteryAsync().ConfigureAwait(false);
+
+        var bridge = new G435Bridge(feature, input);
+        G435Reading reading = await bridge.ReadBatteryAsync().ConfigureAwait(false);
+        if (reading is G435Reading.Failed failed)
+            Log.Warn($"G435: read failed ({failed.Reason}){(forced ? " (asked by the user)" : "")}. Exchange:{Environment.NewLine}{bridge.Transcript}");
+        return reading;
     }
 
     private void Show()

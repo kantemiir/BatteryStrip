@@ -45,7 +45,7 @@ internal sealed class AppHost : IDisposable
         _flyout = FlyoutWindow.StartThread(_store, new FlyoutActions(
             GetWarnings: () => _settings.Warnings,
             SetWarnings: value => _settings.Warnings = value,
-            RefreshDevices: () => _devices?.RequestRefresh(),
+            RefreshDevices: () => _devices?.RequestRefresh(WakeReason.UserRefresh),
             OpenLog: OpenLog,
             Exit: RequestExit));
         _strip.DeviceClicked += _ =>
@@ -63,7 +63,7 @@ internal sealed class AppHost : IDisposable
         _strip.HealthChanged += broken => _tray.Enabled = broken || forceTray;
 
         _devices = new DeviceManager(DeviceSources.Create(_store, new DeviceNaming(_settings.DeviceNames)));
-        _strip.EnvironmentChanged += _devices.RequestRefresh;
+        _strip.EnvironmentChanged += () => _devices.RequestRefresh(WakeReason.Resumed);
         _devices.Start();
 
         _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
@@ -117,7 +117,7 @@ internal sealed class AppHost : IDisposable
         IntPtr menu = CreatePopupMenu();
         try
         {
-            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить устройства");
+            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить заряд сейчас");
             AppendMenu(menu, 0x800, IntPtr.Zero, null); // separator
             AppendMenu(menu, 0, new IntPtr(Exit), "Выход");
 
@@ -127,7 +127,7 @@ internal sealed class AppHost : IDisposable
             int choice = TrackPopupMenuEx(menu, 0x0100 /* TPM_RETURNCMD */ | 0x0020 /* TPM_BOTTOMALIGN */, x, y, owner, IntPtr.Zero);
             User32.PostMessage(owner, 0, IntPtr.Zero, IntPtr.Zero);
 
-            if (choice == Refresh) _devices.RequestRefresh();
+            if (choice == Refresh) _devices.RequestRefresh(WakeReason.UserRefresh);
             else if (choice == Exit) RequestExit();
         }
         finally

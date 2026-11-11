@@ -14,6 +14,9 @@ internal sealed record RememberedCharge(int Percent, bool IsEstimate, DateTime U
 /// </summary>
 internal sealed class DeviceStore(Func<DateTime> utcNow)
 {
+    /// <summary>A value older than this is dimmed even while the device is known to be on.</summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromHours(3);
+
     private sealed class Entry(DeviceDescriptor descriptor)
     {
         public DeviceDescriptor Descriptor = descriptor;
@@ -25,13 +28,14 @@ internal sealed class DeviceStore(Func<DateTime> utcNow)
         public ChargeLevel Level;
         public DateTime? UpdatedUtc;
         public int WarnedAt;
+        public string? Note;
 
         /// <summary>A device is shown once there is something to show: a value or a definite "no data".</summary>
         public bool IsVisible => Percent != null || IsUnsupported;
 
         public DeviceSnapshot ToSnapshot() => new(
             Descriptor.Id, Descriptor.Name, Descriptor.Kind,
-            Percent, IsCharging, IsAsleep, IsEstimate, Level, UpdatedUtc);
+            Percent, IsCharging, IsAsleep, IsEstimate, Level, UpdatedUtc, Note);
     }
 
     private readonly object _gate = new();
@@ -110,18 +114,26 @@ internal sealed class DeviceStore(Func<DateTime> utcNow)
                     entry.IsEstimate = charge.IsEstimate;
                     entry.IsAsleep = false;
                     entry.IsUnsupported = false;
+                    entry.Note = null;
                     entry.UpdatedUtc = utcNow();
                     entry.WarnedAt = LowBatteryAlarm.Step(entry.WarnedAt, percent, charge.IsCharging, out threshold);
                     if (threshold != 0) warnAbout = entry.ToSnapshot();
                     break;
 
-                case DeviceReport.Asleep:
+                case DeviceReport.Asleep asleep:
                     entry.IsAsleep = true;
                     entry.IsCharging = false;
+                    entry.Note = asleep.Note;
+                    break;
+
+                case DeviceReport.Stale stale:
+                    entry.IsAsleep = entry.UpdatedUtc is not DateTime updated || utcNow() - updated > StaleAfter;
+                    entry.Note = stale.Note;
                     break;
 
                 case DeviceReport.Unsupported:
                     entry.IsUnsupported = true;
+                    entry.Note = null;
                     entry.Percent = null;
                     entry.IsCharging = false;
                     entry.IsAsleep = false;

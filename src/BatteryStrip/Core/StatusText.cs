@@ -10,7 +10,7 @@ internal static class StatusText
         if (device.Percent == null) return "Не передаёт заряд";
 
         string age = device.UpdatedUtc is DateTime updated ? Age(utcNow - updated) : "давно";
-        if (device.IsAsleep) return $"Спит, данные {age}";
+        if (device.IsAsleep) return $"{device.Note ?? "Спит"}, данные {age}";
         if (device.IsCharging) return "Заряжается";
 
         string text = age == JustNow ? "Обновлено только что" : $"Обновлено {age}";

@@ -12,6 +12,16 @@ namespace BatteryStrip.Devices;
 /// A family of devices the program can read: one vendor protocol or one Windows interface.
 /// A source recognises its devices among those present and keeps the device store up to date.
 /// </summary>
+/// <summary>Why the device list is being looked at again outside the usual schedule.</summary>
+internal enum WakeReason
+{
+    /// <summary>The computer woke from sleep or Explorer restarted.</summary>
+    Resumed,
+
+    /// <summary>The user chose "Обновить устройства": read everything now.</summary>
+    UserRefresh,
+}
+
 internal interface IDeviceSource : IDisposable
 {
     /// <summary>
@@ -19,6 +29,9 @@ internal interface IDeviceSource : IDisposable
     /// Calls never overlap.
     /// </summary>
     void Refresh(IReadOnlyList<HidCollection> present);
+
+    /// <summary>Called right after <see cref="Refresh"/> when there is a reason to read devices sooner than scheduled.</summary>
+    void Wake(WakeReason reason);
 }
 
 /// <summary>Background work bound to one connected device. Ends on its own when the device is removed.</summary>
@@ -91,6 +104,11 @@ internal sealed class SessionSet<TSession> : IDisposable where TSession : Device
             _sessions.Add(pair.Key, session);
             session.Start();
         }
+    }
+
+    public void ForEach(Action<TSession> action)
+    {
+        foreach (TSession session in _sessions.Values) action(session);
     }
 
     public void Dispose()
