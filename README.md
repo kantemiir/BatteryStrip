@@ -31,9 +31,9 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 3. The strip appears as soon as the first device reports its charge.
 
 **"Windows protected your PC"**: the app has no paid code-signing certificate yet, so SmartScreen warns about new
-downloads. Click *More info* → *Run anyway*. Every release is built on GitHub from this source code; the release page
-lists the SHA-256 of the file and a build attestation you can check with
-`gh attestation verify BatteryStrip-<version>.exe --repo <owner>/BatteryStrip`.
+downloads. Click *More info* → *Run anyway*. Each release page lists the SHA-256 of the file. Releases built by the
+[release workflow](.github/workflows/release.yml) also carry a build attestation you can check with
+`gh attestation verify BatteryStrip-<version>.exe --repo kantemiir/BatteryStrip`.
 
 **Update**: run the newer file, or turn on *Check for updates* under the gear.
 **Uninstall**: *Settings → Apps → Installed apps → BatteryStrip → Uninstall*. Settings, log and autostart go too.

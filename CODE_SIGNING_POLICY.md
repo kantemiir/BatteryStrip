@@ -26,8 +26,11 @@ see [PRIVACY.md](PRIVACY.md).
 
 ## Verifying a release today
 
-Each release lists the SHA-256 of the file and has a GitHub build attestation:
+Each release lists the SHA-256 of the file. Releases built by the release workflow also have a GitHub build attestation:
 
 ```
-gh attestation verify BatteryStrip-<version>.exe --repo <owner>/BatteryStrip
+gh attestation verify BatteryStrip-<version>.exe --repo kantemiir/BatteryStrip
 ```
+
+The first beta, 0.3.0-beta.1, was built on the maintainer's computer because GitHub Actions did not start for this
+account at the time; its release notes say so.

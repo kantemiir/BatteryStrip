@@ -42,6 +42,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
+          gh release view $tag --repo ${{ github.repository }} 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Host "Release $tag already exists; leaving it as it is."; exit 0 }
           $version = $tag.TrimStart('v')
           $hash = (Get-Content "dist/BatteryStrip-$version.sha256.txt").Split(' ')[0]
           $notes = @"
