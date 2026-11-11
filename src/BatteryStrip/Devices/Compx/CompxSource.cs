@@ -16,8 +16,10 @@ namespace BatteryStrip.Devices.Compx;
 /// The same mouse can be reachable through its receiver and, while it charges, through its cable;
 /// both links feed one device on the strip.
 /// </summary>
-internal sealed class CompxSource(DeviceStore store, DeviceNaming naming) : IDeviceSource
+internal sealed class CompxSource(DeviceStore store, DeviceNaming naming, ContainerClaims claims) : IDeviceSource
 {
+    public const string Owner = "compx";
+
     private const ushort VendorId = 0x25A7;
 
     /// <summary>Cable product id of a mouse, mapped to the product id of its receiver.</summary>
@@ -58,6 +60,7 @@ internal sealed class CompxSource(DeviceStore store, DeviceNaming naming) : IDev
             wanted[replies.Path] = () => new CompxLink(target, requests, replies);
         }
 
+        claims.Set(Owner, receivers.Where(r => wanted.Keys.Any(path => r.Any(c => c.Path == path))).Select(r => r.Key.ContainerId));
         _links.Reconcile(wanted);
 
         foreach (string id in _mice.Keys.Where(id => !presentMice.Contains(id)).ToArray())

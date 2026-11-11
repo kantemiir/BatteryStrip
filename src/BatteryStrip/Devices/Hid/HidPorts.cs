@@ -96,6 +96,117 @@ internal sealed class HidInputPort : IDisposable
     }
 }
 
+/// <summary>Sends output reports to one HID collection (the interrupt OUT pipe, as WriteFile does).</summary>
+internal sealed class HidOutputPort : IDisposable
+{
+    private readonly SafeFileHandle _handle;
+    private readonly int _reportLength;
+
+    private HidOutputPort(SafeFileHandle handle, int reportLength)
+    {
+        _handle = handle;
+        _reportLength = reportLength;
+    }
+
+    public static HidOutputPort? Open(HidCollection collection)
+    {
+        if (collection.OutputLength <= 0) return null;
+        SafeFileHandle handle = HidNative.CreateFile(collection.Path, HidNative.GenericRead | HidNative.GenericWrite, HidNative.ShareReadWrite,
+            IntPtr.Zero, HidNative.OpenExisting, 0, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            handle.Dispose();
+            return null;
+        }
+        return new HidOutputPort(handle, collection.OutputLength);
+    }
+
+    /// <param name="report">Byte 0 is the report id; it is padded to the collection's output report length.</param>
+    /// <exception cref="Win32Exception">The write failed.</exception>
+    public void Write(byte[] report)
+    {
+        var buffer = new byte[Math.Max(_reportLength, report.Length)];
+        Array.Copy(report, buffer, report.Length);
+        if (!WriteFile(_handle, buffer, buffer.Length, out _, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+
+    public void Dispose() => _handle.Dispose();
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteFile(SafeFileHandle file, byte[] buffer, int length, out int written, IntPtr overlapped);
+}
+
+/// <summary>
+/// Merges the input reports of several collections into one queue, read by a single consumer. Each port is
+/// read continuously, so use it only for collections with little traffic.
+/// </summary>
+internal sealed class HidReportPump : IDisposable
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<byte[]> _queue = new();
+    private readonly WakeSignal _arrived = new();
+    private readonly CancellationTokenSource _stop = new();
+    private readonly HidInputPort[] _ports;
+    private readonly Task[] _readers;
+
+    public HidReportPump(params HidInputPort[] ports)
+    {
+        _ports = ports;
+        _readers = new Task[ports.Length];
+        for (int i = 0; i < ports.Length; i++)
+        {
+            HidInputPort port = ports[i];
+            _readers[i] = Task.Run(() => PumpAsync(port));
+        }
+    }
+
+    /// <summary>True once every port stopped, for example because the device was unplugged.</summary>
+    public bool IsDead => Array.TrueForAll(_readers, r => r.IsCompleted);
+
+    /// <summary>The next report from any port, or null after <paramref name="timeout"/> or on cancellation.</summary>
+    public async Task<byte[]?> NextAsync(TimeSpan timeout, CancellationToken cancellation)
+    {
+        DateTime until = DateTime.UtcNow + timeout;
+        try
+        {
+            while (true)
+            {
+                if (_queue.TryDequeue(out byte[]? report)) return report;
+                TimeSpan left = until - DateTime.UtcNow;
+                if (left <= TimeSpan.Zero) return null;
+                await _arrived.WaitAsync(left, cancellation).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A cancelled wait loses nothing: unread reports stay queued for the next call.
+            return null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _stop.Cancel();
+        foreach (HidInputPort port in _ports) port.Dispose();
+    }
+
+    private async Task PumpAsync(HidInputPort port)
+    {
+        try
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                byte[]? report = await port.ReadAsync(TimeSpan.FromMinutes(10), _stop.Token).ConfigureAwait(false);
+                if (report == null) continue;
+                _queue.Enqueue(report);
+                _arrived.Set();
+            }
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException or IOException)
+        {
+        }
+    }
+}
+
 /// <summary>Sends and reads feature reports of one HID collection. Calls block for the duration of a USB control transfer.</summary>
 internal sealed class HidFeaturePort : IDisposable
 {

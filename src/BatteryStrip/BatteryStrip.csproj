@@ -35,6 +35,18 @@
       <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.UI.winmd</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Windows.Gaming">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Gaming.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.Devices">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Devices.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.System">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.System.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,7 @@ internal enum DeviceKind
     Headset,
     Gamepad,
     Keyboard,
+    Speaker,
     Other,
 }
 

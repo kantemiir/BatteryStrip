@@ -14,7 +14,8 @@ internal sealed class AppHost : IDisposable
     /// <summary>Signalled by the installer or a second copy to ask this copy to exit.</summary>
     public const string ExitEventName = @"Local\BatteryStrip.Exit";
 
-    private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(10);
+    /// <summary>Remembered charges are written at most this often (and on exit), not on every reading.</summary>
+    private static readonly TimeSpan SaveDelay = TimeSpan.FromMinutes(2);
 
     private readonly DeviceStore _store = new(() => DateTime.UtcNow);
     private readonly Settings _settings = new(Settings.DefaultPath);
@@ -26,6 +27,7 @@ internal sealed class AppHost : IDisposable
     private readonly EventWaitHandle _exitEvent;
     private readonly RegisteredWaitHandle _exitWait;
     private readonly int _mainThreadId = GetCurrentThreadId();
+    private int _savePending;
 
     /// <param name="forceTray">Show tray icons even while the strip works (for testing the fallback).</param>
     public AppHost(bool forceTray = false)
@@ -36,8 +38,15 @@ internal sealed class AppHost : IDisposable
         {
             if (_settings.Warnings) Notifier.LowBattery(device, threshold);
         };
-        _saveTimer = new Timer(_ => Save());
-        _store.Changed += () => _saveTimer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
+        _saveTimer = new Timer(_ =>
+        {
+            Interlocked.Exchange(ref _savePending, 0);
+            Save();
+        });
+        _store.Changed += () =>
+        {
+            if (Interlocked.Exchange(ref _savePending, 1) == 0) _saveTimer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
+        };
 
         _strip = new TaskbarStrip(_store);
         _strip.ContextMenuRequested += ShowMenu;

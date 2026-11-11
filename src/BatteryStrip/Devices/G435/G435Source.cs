@@ -10,8 +10,10 @@ using BatteryStrip.Devices.Hid;
 namespace BatteryStrip.Devices.G435;
 
 /// <summary>Logitech G435 headset on its original LIGHTSPEED receiver (046D:0ACB).</summary>
-internal sealed class G435Source(DeviceStore store, DeviceNaming naming) : IDeviceSource
+internal sealed class G435Source(DeviceStore store, DeviceNaming naming, ContainerClaims claims) : IDeviceSource
 {
+    public const string Owner = "g435";
+
     private const ushort VendorId = 0x046D;
     private const ushort ProductId = 0x0ACB;
     private const ushort ServicePage = 0xFFC0;
@@ -31,6 +33,7 @@ internal sealed class G435Source(DeviceStore store, DeviceNaming naming) : IDevi
             var descriptor = new DeviceDescriptor(id, naming.Resolve(id, "Logitech G435"), DeviceKind.Headset);
             wanted[service.Path] = () => new G435Session(store, descriptor, service);
         }
+        claims.Set(Owner, service != null ? [service.ContainerId] : Array.Empty<Guid>());
         _sessions.Reconcile(wanted);
     }
 
@@ -69,7 +72,7 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     private const string NoAnswerNote = "Нет ответа";
 
     private readonly EstimateSmoother _smoother = new();
-    private readonly SemaphoreSlim _wake = new(0);
+    private readonly WakeSignal _wake = new();
     private volatile bool _readNow;
     private DateTime _notBefore = DateTime.MinValue;
     private bool _shown;
@@ -82,8 +85,7 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     {
         if (reason == WakeReason.UserRefresh) _readNow = true;
         else _notBefore = DateTime.UtcNow + SettleAfterResume;
-        try { _wake.Release(); }
-        catch (ObjectDisposedException) { }
+        _wake.Set();
     }
 
     public override void Dispose()
@@ -145,8 +147,7 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     private async Task PauseAsync(TimeSpan pause, CancellationToken cancellation)
     {
         if (_readNow) return;
-        await Task.WhenAny(Task.Delay(pause, cancellation), _wake.WaitAsync(cancellation)).ConfigureAwait(false);
-        cancellation.ThrowIfCancellationRequested();
+        await _wake.WaitAsync(pause, cancellation).ConfigureAwait(false);
     }
 
     /// <summary>Returns when a read may start: the headset is quiet, or the user asked. True for the latter.</summary>
@@ -176,8 +177,7 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
                 store.Report(descriptor.Id, new DeviceReport.Stale(WaitingNote));
             }
 
-            await Task.WhenAny(Task.Delay(AudioPoll, cancellation), _wake.WaitAsync(cancellation)).ConfigureAwait(false);
-            cancellation.ThrowIfCancellationRequested();
+            await _wake.WaitAsync(AudioPoll, cancellation).ConfigureAwait(false);
         }
     }
 

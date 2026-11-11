@@ -28,16 +28,17 @@ internal sealed class StripPainter(GlyphCache glyphs)
     private const float BoltGap = 1, BoltFont = 13;
     private const float DeviceGap = 14;
 
-    private const string Bolt = "";
-    private const string Dash = "–";
+    private const string Bolt = "\uE945";
+    private const string Dash = "\u2013";
 
     public static string IconOf(DeviceKind kind) => kind switch
     {
-        DeviceKind.Mouse => "",
-        DeviceKind.Headset => "",
-        DeviceKind.Gamepad => "",
-        DeviceKind.Keyboard => "",
-        _ => "",
+        DeviceKind.Mouse => "\uE962",
+        DeviceKind.Headset => "\uE7F6",
+        DeviceKind.Gamepad => "\uE7FC",
+        DeviceKind.Keyboard => "\uE765",
+        DeviceKind.Speaker => "\uE7F5",
+        _ => "\uE772",
     };
 
     /// <param name="height">Height of the strip in pixels; content is centred vertically.</param>
