@@ -2,7 +2,7 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
-## Unreleased
+## 0.3.0-beta.2 — 2026-11-11
 
 - **Report a device** under the gear: the app collects the device report itself and shows the file, ready to send
   on Telegram or attach to a GitHub device request. No command prompt needed.
