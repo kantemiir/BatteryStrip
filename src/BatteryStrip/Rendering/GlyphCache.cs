@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Drawing.Text;
-using System.Runtime.InteropServices;
+using System.Linq;
 
 namespace BatteryStrip.Rendering;
 
@@ -21,22 +19,23 @@ internal enum GlyphFont
 }
 
 /// <summary>
-/// Rasterises text and icon glyphs into coverage masks cropped to their ink, and caches them.
-/// Ink cropping lets digits and icons be centred optically rather than by font metrics.
-/// Not thread-safe: use one instance per thread.
+/// Rasterises text and icon glyphs with DirectWrite into coverage masks and caches them. Single glyphs and
+/// numbers are cropped to their ink, so they can be centred optically; text lines keep their full height,
+/// so different lines share a baseline. Not thread-safe: use one instance per thread.
 /// </summary>
 internal sealed class GlyphCache : IDisposable
 {
-    private readonly Dictionary<(GlyphFont, float, string), GlyphMask> _cache = new();
-    private readonly Dictionary<(GlyphFont, float, int, string), GlyphMask> _lines = new();
-    private readonly Dictionary<(GlyphFont, float), Font> _fonts = new();
+    private readonly Dictionary<(GlyphFont, float, string, bool), GlyphMask> _cache = new();
+    private readonly Dictionary<(GlyphFont, float, int, string, bool), GlyphMask> _lines = new();
+    private DirectText? _text;
 
-    public GlyphMask Get(GlyphFont font, float pixelSize, string text)
+    /// <param name="lightText">The mask will be painted in a light colour (on a dark background).</param>
+    public GlyphMask Get(GlyphFont font, float pixelSize, string text, bool lightText)
     {
-        var key = (font, pixelSize, text);
+        var key = (font, pixelSize, text, lightText);
         if (!_cache.TryGetValue(key, out GlyphMask? mask))
         {
-            mask = Rasterize(FontFor(font, pixelSize), text);
+            mask = Rasterize(font, pixelSize, text, lightText);
             _cache[key] = mask;
         }
         return mask;
@@ -46,12 +45,12 @@ internal sealed class GlyphCache : IDisposable
     /// A line of text in a box one line high, so different strings share the same baseline.
     /// Text wider than <paramref name="maxWidth"/> is cut with an ellipsis.
     /// </summary>
-    public GlyphMask GetLine(GlyphFont font, float pixelSize, string text, int maxWidth)
+    public GlyphMask GetLine(GlyphFont font, float pixelSize, string text, int maxWidth, bool lightText)
     {
-        var key = (font, pixelSize, maxWidth, text);
+        var key = (font, pixelSize, maxWidth, text, lightText);
         if (!_lines.TryGetValue(key, out GlyphMask? mask))
         {
-            mask = RasterizeLine(FontFor(font, pixelSize), text, maxWidth);
+            mask = RasterizeLine(font, pixelSize, text, maxWidth, lightText);
             _lines[key] = mask;
         }
         return mask;
@@ -62,117 +61,52 @@ internal sealed class GlyphCache : IDisposable
     {
         _cache.Clear();
         _lines.Clear();
-        foreach (Font font in _fonts.Values) font.Dispose();
-        _fonts.Clear();
     }
 
-    public void Dispose() => Clear();
-
-    private Font FontFor(GlyphFont role, float pixelSize)
+    public void Dispose()
     {
-        if (_fonts.TryGetValue((role, pixelSize), out Font? font)) return font;
+        Clear();
+        _text?.Dispose();
+        _text = null;
+    }
 
-        string[] families = role switch
+    private DirectText Text => _text ??= new DirectText();
+
+    private static readonly Lazy<HashSet<string>> InstalledFamilies = new(() =>
+    {
+        using var fonts = new InstalledFontCollection();
+        return new HashSet<string>(fonts.Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+    });
+
+    /// <summary>The first installed family for a role, with its weight. Windows 10 lacks the Windows 11 fonts.</summary>
+    private static (string Family, int Weight) FontFor(GlyphFont role)
+    {
+        (string, int)[] candidates = role switch
         {
-            GlyphFont.Icons => ["Segoe Fluent Icons", "Segoe MDL2 Assets"],
-            GlyphFont.Body => ["Segoe UI Variable Text", "Segoe UI"],
-            // GDI lists the named instances of the variable font with names cut to 31 characters.
-            _ => ["Segoe UI Variable Small Semibol", "Segoe UI Variable Text Semibold", "Segoe UI Semibold"],
+            GlyphFont.Icons => [("Segoe Fluent Icons", DirectText.WeightRegular), ("Segoe MDL2 Assets", DirectText.WeightRegular)],
+            GlyphFont.Body => [("Segoe UI Variable Text", DirectText.WeightRegular), ("Segoe UI", DirectText.WeightRegular)],
+            _ => [("Segoe UI Variable Small", DirectText.WeightSemibold), ("Segoe UI", DirectText.WeightSemibold)],
         };
-
-        foreach (string family in families)
+        foreach (var candidate in candidates)
         {
-            try
-            {
-                font = new Font(family, pixelSize, FontStyle.Regular, GraphicsUnit.Pixel);
-                if (font.Name == family) break;
-                font.Dispose();
-                font = null;
-            }
-            catch (ArgumentException)
-            {
-                font = null;
-            }
+            if (InstalledFamilies.Value.Contains(candidate.Item1)) return candidate;
         }
-        font ??= new Font(SystemFonts.MessageBoxFont.FontFamily, pixelSize, FontStyle.Bold, GraphicsUnit.Pixel);
-        _fonts[(role, pixelSize)] = font;
-        return font;
+        return candidates[candidates.Length - 1];
     }
 
-    private static GlyphMask RasterizeLine(Font font, string text, int maxWidth)
+    private GlyphMask Rasterize(GlyphFont role, float size, string text, bool lightText)
     {
-        int height = (int)Math.Ceiling(font.GetHeight());
-        int width = Math.Max(1, maxWidth);
-        using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-        using (Graphics g = Graphics.FromImage(bitmap))
-        {
-            g.Clear(Color.Transparent);
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            using var format = new StringFormat(StringFormat.GenericTypographic)
-            {
-                Trimming = StringTrimming.EllipsisCharacter,
-                FormatFlags = StringFormatFlags.NoWrap,
-            };
-            g.DrawString(text, font, Brushes.White, new RectangleF(0, 0, width, height), format);
-        }
+        var (family, weight) = FontFor(role);
+        int height = (int)Math.Ceiling(size * 2) + 8;
+        int width = (int)Math.Ceiling(size * 1.2f * Math.Max(1, text.Length)) + 16;
+        uint[] pixels = Text.Render(family, weight, size, text, width, height, 8, 4, width - 8, lightText);
 
-        BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-        var pixels = new int[width * height];
-        try
-        {
-            Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
-        }
-        finally
-        {
-            bitmap.UnlockBits(data);
-        }
-
-        // Keep the full line height (shared baseline) but trim empty columns on the right.
-        int used = 0;
-        for (int i = 0; i < pixels.Length; i++)
-        {
-            if ((pixels[i] >>> 24) != 0) used = Math.Max(used, i % width + 1);
-        }
-        if (used == 0) return GlyphMask.Empty;
-
-        var coverage = new byte[used * height];
+        int left = width, top = height, right = -1, bottom = -1;
         for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < used; x++) coverage[y * used + x] = (byte)(pixels[y * width + x] >>> 24);
-        }
-        return new GlyphMask(used, height, coverage);
-    }
-
-    private static GlyphMask Rasterize(Font font, string text)
-    {
-        int size = (int)Math.Ceiling(font.Size * 2.5f) + 8;
-        int width = size * Math.Max(1, text.Length);
-        using var bitmap = new Bitmap(width, size, PixelFormat.Format32bppArgb);
-        using (Graphics g = Graphics.FromImage(bitmap))
-        {
-            g.Clear(Color.Transparent);
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            using var format = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.NoClip };
-            g.DrawString(text, font, Brushes.White, 4, 4, format);
-        }
-
-        BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, size), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-        var pixels = new int[width * size];
-        try
-        {
-            Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
-        }
-        finally
-        {
-            bitmap.UnlockBits(data);
-        }
-
-        int left = width, top = size, right = -1, bottom = -1;
-        for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                if ((pixels[y * width + x] >>> 24) == 0) continue;
+                if ((pixels[y * width + x] >> 24) == 0) continue;
                 left = Math.Min(left, x);
                 right = Math.Max(right, x);
                 top = Math.Min(top, y);
@@ -185,9 +119,31 @@ internal sealed class GlyphCache : IDisposable
         var coverage = new byte[maskWidth * maskHeight];
         for (int y = 0; y < maskHeight; y++)
         {
-            for (int x = 0; x < maskWidth; x++)
-                coverage[y * maskWidth + x] = (byte)(pixels[(top + y) * width + left + x] >>> 24);
+            for (int x = 0; x < maskWidth; x++) coverage[y * maskWidth + x] = (byte)(pixels[(top + y) * width + left + x] >> 24);
         }
         return new GlyphMask(maskWidth, maskHeight, coverage);
+    }
+
+    private GlyphMask RasterizeLine(GlyphFont role, float size, string text, int maxWidth, bool lightText)
+    {
+        var (family, weight) = FontFor(role);
+        int height = (int)Math.Ceiling(size * 1.36f);
+        int width = Math.Max(1, maxWidth);
+        uint[] pixels = Text.Render(family, weight, size, text, width, height, 0, 0, width, lightText);
+
+        // Keep the full line height (shared baseline) but trim empty columns on the right.
+        int used = 0;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            if ((pixels[i] >> 24) != 0) used = Math.Max(used, i % width + 1);
+        }
+        if (used == 0) return GlyphMask.Empty;
+
+        var coverage = new byte[used * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < used; x++) coverage[y * used + x] = (byte)(pixels[y * width + x] >> 24);
+        }
+        return new GlyphMask(used, height, coverage);
     }
 }

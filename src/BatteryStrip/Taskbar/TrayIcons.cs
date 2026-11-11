@@ -228,8 +228,8 @@ internal sealed class TrayIcons : NativeWindow
             };
 
         // Two digits fill a small icon; the font is as large as fits its width.
-        GlyphMask mask = _glyphs.Get(GlyphFont.NumberSemibold, size * 0.8f, text);
-        for (float font = size * 0.8f; mask.Width > size && font > 6; font -= 0.5f) mask = _glyphs.Get(GlyphFont.NumberSemibold, font, text);
+        GlyphMask mask = _glyphs.Get(GlyphFont.NumberSemibold, size * 0.8f, text, !palette.IsLight);
+        for (float font = size * 0.8f; mask.Width > size && font > 6; font -= 0.5f) mask = _glyphs.Get(GlyphFont.NumberSemibold, font, text, !palette.IsLight);
         surface.DrawMask(mask, (size - mask.Width) / 2, (size - mask.Height) / 2, colour);
         return IconFromSurface(surface);
     }

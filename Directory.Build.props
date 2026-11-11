@@ -5,7 +5,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Заряд устройств</Product>
     <NeutralLanguage>ru</NeutralLanguage>

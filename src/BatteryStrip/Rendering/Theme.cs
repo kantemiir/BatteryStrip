@@ -18,10 +18,10 @@ internal sealed record Palette(
 {
     public static Palette Dark { get; } = new(
         IsLight: false,
-        Text: Rgba.FromHex(0xF2F2F2),
+        Text: Rgba.FromHex(0xFFFFFF),
         SecondaryText: Rgba.FromHex(0xC9D1D9),
         Dimmed: Rgba.FromHex(0x5F6B76),
-        Outline: Rgba.FromHex(0xF2F2F2, 0.45),
+        Outline: Rgba.FromHex(0xFFFFFF, 0.6),
         Low: Rgba.FromHex(0xEF9F27),
         Critical: Rgba.FromHex(0xE24B4A),
         Charging: Rgba.FromHex(0x97C459),
@@ -30,10 +30,10 @@ internal sealed record Palette(
 
     public static Palette Light { get; } = new(
         IsLight: true,
-        Text: Rgba.FromHex(0x1B1B1B),
+        Text: Rgba.FromHex(0x1A1A1A),
         SecondaryText: Rgba.FromHex(0x444441),
         Dimmed: Rgba.FromHex(0xA8ADB2),
-        Outline: Rgba.FromHex(0x1B1B1B, 0.4),
+        Outline: Rgba.FromHex(0x1A1A1A, 0.55),
         Low: Rgba.FromHex(0xBA7517),
         Critical: Rgba.FromHex(0xE24B4A),
         Charging: Rgba.FromHex(0x639922),

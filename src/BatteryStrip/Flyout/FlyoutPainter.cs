@@ -35,7 +35,7 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
 
         if (devices.Count == 0)
         {
-            GlyphMask empty = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), "Устройства с известным зарядом не найдены", (int)(right - left));
+            GlyphMask empty = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), "Устройства с известным зарядом не найдены", (int)(right - left), !palette.IsLight);
             surface.DrawMask(empty, (int)left, (int)Math.Round(y + (rowHeight - empty.Height) / 2), palette.SecondaryText);
             y += rowHeight;
             Divider(surface, palette, left, right, y);
@@ -52,11 +52,11 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
         float gearSize = GearBox * scale;
         var gear = new RectF(right - gearSize + 6 * scale, y + FooterPadTop * scale, gearSize, gearSize);
         float footerMiddle = gear.Y + gear.Height / 2;
-        GlyphMask label = glyphs.GetLine(GlyphFont.Body, Px(FooterFont, scale), footer, (int)(gear.X - left));
+        GlyphMask label = glyphs.GetLine(GlyphFont.Body, Px(FooterFont, scale), footer, (int)(gear.X - left), !palette.IsLight);
         surface.DrawMask(label, (int)left, (int)Math.Round(footerMiddle - label.Height / 2f), palette.SecondaryText);
 
         if (gearHovered) surface.FillRoundedRect(gear, 4 * scale, palette.Text.WithOpacity(palette.IsLight ? 0.06 : 0.08));
-        GlyphMask gearIcon = glyphs.Get(GlyphFont.Icons, Px(GearFont, scale), Gear);
+        GlyphMask gearIcon = glyphs.Get(GlyphFont.Icons, Px(GearFont, scale), Gear, !palette.IsLight);
         surface.DrawMask(gearIcon, (int)Math.Round(gear.X + (gear.Width - gearIcon.Width) / 2), (int)Math.Round(footerMiddle - gearIcon.Height / 2f), palette.SecondaryText);
 
         return new Image(surface, gear);
@@ -73,8 +73,8 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
 
         float textLeft = left + (IconBox + IconGap) * scale;
         int textWidth = (int)(batteryLeft - TextGap * scale - textLeft);
-        GlyphMask name = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), device.Name, textWidth);
-        GlyphMask status = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), StatusText.For(device, utcNow), textWidth);
+        GlyphMask name = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), device.Name, textWidth, !palette.IsLight);
+        GlyphMask status = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), StatusText.For(device, utcNow), textWidth, !palette.IsLight);
         float textTop = (float)Math.Round(middle - (name.Height + status.Height) / 2f);
         surface.DrawMask(name, (int)textLeft, (int)textTop, device.IsAsleep ? palette.SecondaryText : palette.Text);
         surface.DrawMask(status, (int)textLeft, (int)textTop + name.Height, palette.SecondaryText);
@@ -82,8 +82,8 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
 
     private float RowHeight(float scale)
     {
-        GlyphMask name = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), "Яg", 200);
-        GlyphMask status = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), "Яg", 200);
+        GlyphMask name = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), "Яg", 200, lightText: true);
+        GlyphMask status = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), "Яg", 200, lightText: true);
         return (float)Math.Round(2 * RowPadY * scale + name.Height + status.Height);
     }
 
