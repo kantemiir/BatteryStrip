@@ -1,0 +1,14 @@
+name: Runner check
+
+# Temporary: tells whether GitHub starts any job for this repository.
+on: workflow_dispatch
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Linux runner started"
+  windows:
+    runs-on: windows-latest
+    steps:
+      - run: echo "Windows runner started"
