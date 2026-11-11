@@ -54,6 +54,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BatteryStrip.Tests" />
+    <!-- Set by the release build (-p:GitHubRepository=owner/name); enables the update check. -->
+    <AssemblyMetadata Include="Repository" Value="$(GitHubRepository)" />
   </ItemGroup>
 
 </Project>

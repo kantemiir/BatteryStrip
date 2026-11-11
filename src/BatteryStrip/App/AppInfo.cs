@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace BatteryStrip.App;
@@ -20,8 +21,12 @@ internal static class AppInfo
         Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
-    /// <summary>GitHub repository of the project ("owner/name"); empty in builds that are not published.</summary>
-    public const string Repository = "";
+    /// <summary>
+    /// GitHub repository of the project ("owner/name"). Release builds get it from the build server;
+    /// local builds have none, so they never look for updates.
+    /// </summary>
+    public static string Repository { get; } =
+        Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "Repository")?.Value ?? "";
 
     public static bool HasRepository => Repository.Length > 0;
 

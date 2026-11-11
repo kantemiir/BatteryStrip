@@ -4,3 +4,9 @@ dist/
 *.user
 .vs/
 promo/
+
+# Personal notes from the first chat; kept locally, not published.
+PROMPT.md
+AUDIT.md
+research/taskbar-spike/capture.png
+research/listen-*.txt

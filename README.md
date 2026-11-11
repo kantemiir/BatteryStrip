@@ -1,92 +1,106 @@
-# Заряд устройств
+# BatteryStrip
 
-Маленькая полоска на панели задач Windows 11, вплотную слева от значков у часов. Она показывает заряд беспроводных
-устройств: мыши, наушников и других. Программа сама находит подключённые устройства и показывает столько, сколько подключено.
+**[Русский](README.ru.md)** · English
 
-![Полоска на панели задач](docs/strip.png)
+A tiny strip on the Windows 11 taskbar, right next to the clock, that shows the charge of your wireless devices:
+mouse, headset, controller, keyboard. It finds them by itself and shows as many as are connected.
 
-- **Цвета.** Обычный заряд — белым на тёмной панели и чёрным на светлой. 20 % и меньше — жёлтым, 10 % и меньше — красным.
-  Пока устройство заряжается, заливка зелёная и рядом молния.
-- **Спящее устройство** приглушено и показывает последнее известное значение. Прочерк значит, что устройство не сообщает заряд.
-- **Клик по полоске** открывает список устройств: название, состояние и время последнего обновления. Шестерёнка внизу открывает настройки.
-- **Уведомление** Windows приходит, когда заряд опускается до 20 % и до 10 %, по одному разу.
-- **Тема.** Полоска сама подстраивается под светлую или тёмную панель.
+![The strip on the taskbar](docs/strip.png)
 
-## Установка
+> **Beta.** Two devices have been tested on real hardware so far: a Lamzu mouse and a Logitech G435 headset.
+> Everything else is implemented from public protocol documentation and needs testers.
+> If your device is listed below, please tell us whether it works.
 
-1. Скопируйте файл `BatteryStrip-<версия>.exe` из папки `dist` на компьютер, например на флешке или через LocalSend.
-2. Запустите его и нажмите «ОК». Программа установится для текущего пользователя, права администратора не нужны.
-3. Полоска появится, как только программа прочитает заряд первого устройства. Обычно это несколько секунд, у наушников — до минуты.
+- **Colours**: white on a dark taskbar, black on a light one; yellow at 20% and below, red at 10% and below;
+  green with a bolt while charging. A sleeping device is faded and keeps its last known value; a dash means
+  the device does not report its charge.
+- **Click** the strip for the list of devices with their state. The gear opens the settings.
+- **Notifications** when a device drops to 20% and to 10%, once each.
+- **Follows the taskbar**: light or dark theme, Explorer restarts, sleep, a crowded taskbar (the icons go first,
+  then the devices move to tray icons).
+- **Small and quiet**: one 200 KB file, about 25 MB of memory, close to zero CPU. No administrator rights,
+  no runtime to install, no ads, no telemetry. The only network access is an optional daily update check.
+- **Languages**: Russian and English, following Windows.
 
-Дальше программа запускается сама при входе в Windows.
+![The device list](docs/flyout.en.png)
 
-**Если Windows покажет синее окно «Система Windows защитила ваш компьютер»**: у программы нет платной цифровой подписи.
-Нажмите «Подробнее», затем «Выполнить в любом случае». Окно появляется только для скачанных из интернета файлов;
-файл, переданный по флешке или через LocalSend, обычно запускается без него.
+## Install
 
-**Обновление** — то же самое: запустите файл новой версии. Настройки и сохранённые значения останутся.
+1. Download `BatteryStrip-<version>.exe` from [Releases](../../releases).
+2. Run it and confirm. It installs for the current user only, without administrator rights, and starts with Windows.
+3. The strip appears as soon as the first device reports its charge.
 
-**Удаление**: «Параметры → Приложения → Установленные приложения → Заряд устройств → Удалить».
-Программа удалит себя, свои настройки, журнал и автозапуск.
+**"Windows protected your PC"**: the app has no paid code-signing certificate yet, so SmartScreen warns about new
+downloads. Click *More info* → *Run anyway*. Every release is built on GitHub from this source code; the release page
+lists the SHA-256 of the file and a build attestation you can check with
+`gh attestation verify BatteryStrip-<version>.exe --repo <owner>/BatteryStrip`.
 
-## Какие устройства поддерживаются
+**Update**: run the newer file, or turn on *Check for updates* under the gear.
+**Uninstall**: *Settings → Apps → Installed apps → BatteryStrip → Uninstall*. Settings, log and autostart go too.
 
-| Устройство | Как читается заряд |
-|---|---|
-| Мыши на чипсете COMPX (USB-приёмник 25A7): **Lamzu**, Ajazz, Attack Shark и другие | Точный процент и признак зарядки. Если запущена программа LAMZU, наша программа читает её же ответы и сама мышь не опрашивает. |
-| **Logitech G435** через свой приёмник (046D:0ACB) | Примерный процент по напряжению батареи, без признака зарядки. При чтении звук в наушниках прерывается примерно на секунду, поэтому сама программа читает заряд не чаще раза в 30 минут, в паузе звука от 20 секунд и только при свободном микрофоне. Пункт меню «Обновить заряд сейчас» читает сразу. |
-| **Bluetooth**: наушники, колонки, мыши, клавиатуры (AirPods, Sony, JBL, Logitech MX и другие) | Тот же процент, что Windows показывает в «Параметрах → Bluetooth». Программа читает его у Windows и устройство не трогает. Если Windows заряд устройства не знает, его не узнает и программа. |
-| **Logitech** с протоколом HID++: мыши, клавиатуры и гарнитуры на приёмниках Unifying, Bolt, Lightspeed и по проводу (G Pro, G305, G502 X, MX Master, G733, G535, G Pro X и другие) | Точный процент или оценка по напряжению, смотря что умеет устройство. Программа отправляет стандартные запросы чтения, те же, что G HUB и Solaar. |
-| **DualSense**, DualSense Edge, **DualShock 4** — по проводу и Bluetooth | Процент с шагом 10 и признак зарядки. Заряд есть в данных, которые геймпад и так присылает; раз в минуту программа берёт несколько таких сообщений. |
-| **Геймпады Xbox** и совместимые: через адаптер Xbox Wireless или Bluetooth | Процент и признак зарядки — то, что сообщает сама Windows. |
+## Supported devices
 
-Проверено на настоящих устройствах: мышь Lamzu и наушники G435. Остальные протоколы взяты из открытой документации
-и проверены тестами на записанных и построенных по документации сообщениях.
+| Devices | How the charge is read | Tested |
+|---|---|---|
+| Mice on the COMPX chipset (receiver 25A7): **Lamzu**, Ajazz, Attack Shark, VXE and others | Exact percent and charging state. If the vendor app is running, its own requests are reused and the mouse is not asked again. | Lamzu ✔ |
+| **Logitech G435** on its own receiver (046D:0ACB) | Estimated from the battery voltage. Reading pauses the headset's audio for about a second, so it is **off until you agree**; then it happens at most every 30 minutes and only during silence. | ✔ |
+| **Logitech HID++** mice, keyboards and headsets on Unifying, Bolt, Lightspeed and by cable (G Pro, G305, G502 X, MX Master, G733, G535 and others) | Exact percent or a voltage estimate, depending on the device. Standard read requests, the same G HUB and Solaar send. | needs testers |
+| **Bluetooth** headphones, speakers, mice, keyboards (AirPods, Sony, JBL and others) | The value Windows shows in *Settings → Bluetooth*, read from Windows without touching the device. | needs testers |
+| **DualSense**, DualSense Edge, **DualShock 4**, by cable and Bluetooth | In 10% steps, with charging state, from the reports the controller sends anyway. | needs testers |
+| **Xbox** and compatible controllers | What Windows reports for the controller. | needs testers |
 
-### Если вашего устройства нет в списке
+Not supported yet: Razer, SteelSeries, HyperX, Corsair and other vendor-specific protocols.
 
-Запустите в командной строке:
+### Your device is missing or wrong?
+
+Run
 
 ```
 "%LOCALAPPDATA%\Programs\BatteryStrip\BatteryStrip.exe" --diagnose
 ```
 
-Через 40 секунд откроется отчёт `%LOCALAPPDATA%\BatteryStrip\diagnose.txt` со списком HID-устройств компьютера.
-Он нужен, чтобы добавить поддержку нового устройства. В отчёте нет личных данных, только коды устройств.
+After 40 seconds a report opens (`%LOCALAPPDATA%\BatteryStrip\diagnose.txt`) with the HID devices of the computer and
+what the app could read. It contains device codes and names only. Attach it to a
+[device request](../../issues/new?template=device_request.yml).
 
-## Настройки
+## Settings
 
-Самое нужное — в шестерёнке окна по клику: автозапуск, предупреждения о низком заряде, обновление списка устройств,
-журнал и выход.
+The gear in the device list: start with Windows, low battery warnings, G435 reading, update check, refresh now,
+log, exit. A few more options live in `%LOCALAPPDATA%\BatteryStrip\settings.txt`:
 
-Название устройства можно поменять в файле `%LOCALAPPDATA%\BatteryStrip\settings.txt` строкой вида
-`name compx:25A7:FA7C = Мышь Lamzu Atlantis`. Код устройства есть в журнале и в отчёте `--diagnose`.
-После правки перезапустите программу.
+```
+language = en                         # ru, en, or empty to follow Windows
+name compx:25A7:FA7C = Lamzu Atlantis # your own name for a device; ids are in the log and the --diagnose report
+```
 
-## Если что-то пошло не так
+## How it works
 
-- **Полоска пропала.** После перезапуска Проводника или выхода из сна она возвращается сама за пару секунд.
-  Если Windows не даёт прикрепиться к панели, через 20 секунд устройства появятся значками с числом у часов.
-- **Журнал**: шестерёнка → «Открыть журнал» или файл `%LOCALAPPDATA%\BatteryStrip\logs\app.log`.
-- Программа не пользуется интернетом и ничего никуда не отправляет.
+The strip is a transparent child window of the taskbar, placed left of the notification area and redrawn when
+devices, theme or scale change. A watchdog re-attaches it after Explorer restarts or sleep; if Windows does not let it
+attach, tray icons stand in. The window's thread only draws: device work happens on other threads, because a child
+window shares its input queue with Explorer.
 
-## Для разработчика
+Design notes: [docs/design.md](docs/design.md). Device protocols: [research/devices.md](research/devices.md).
 
-- C# 12, .NET Framework 4.8, которая встроена в Windows 10 и 11. На целевой компьютер ставить ничего не нужно.
-- Сборка: нужен .NET SDK 8 или новее. Команда `powershell -ExecutionPolicy Bypass -File scripts\build.ps1`
-  прогоняет тесты и кладёт программу в `dist\`.
-- Тесты: `dotnet test`.
-- Режимы запуска:
-  - `--run` — запустить сборку на месте, без установщика;
-  - `--tray` — вдобавок к полоске показывать значки в трее;
-  - `--preview файл.png` — нарисовать все состояния полоски;
-  - `--diagnose` — отчёт об устройствах;
-  - `--exit` — закрыть запущенную копию.
-- Устройство полоски и решения проекта — в [AUDIT.md](AUDIT.md), протоколы устройств — в [research/devices.md](research/devices.md).
+## Building
 
-Протоколы устройств восстановлены по открытым проектам (лицензия MIT):
-[AreYouLowBattery](https://github.com/ryan-mant/AreYouLowBattery),
-[omarchy-ajazz-mouse](https://github.com/Alanus96/omarchy-ajazz-mouse),
-[logitech-g435-battery](https://github.com/deddroid/logitech-g435-battery),
-[g435-battery-percentage](https://github.com/portyporty/g435-battery-percentage).
-Оба протокола проверены на настоящих устройствах.
+.NET SDK 8 or newer. The app targets .NET Framework 4.8, which is part of Windows 10 and 11.
+
+```
+dotnet test
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+```
+
+The second command runs the tests and writes `dist\BatteryStrip-<version>.exe` with its SHA-256.
+
+Development switches: `--run` (run in place, without the installer), `--tray` (also show tray icons),
+`--preview file.png` and `--preview-flyout file.png` (render the UI), `--lang ru|en`, `--diagnose`, `--exit`.
+
+## Privacy
+
+No telemetry. See [PRIVACY.md](PRIVACY.md).
+
+## License
+
+[MIT](LICENSE). Protocol knowledge comes from open-source projects, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Logitech, Lamzu, Sony, Microsoft, Xbox and other names are trademarks of their owners; this project is not affiliated with them.

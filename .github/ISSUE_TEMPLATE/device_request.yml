@@ -1,0 +1,35 @@
+name: Device request / Новое устройство
+description: A device is missing or shows a wrong charge / Устройства нет или заряд неверный
+labels: [device]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device / Устройство
+      description: Exact model and how it is connected (receiver, Bluetooth, cable) / Модель и подключение (приёмник, Bluetooth, провод)
+      placeholder: Logitech G Pro X Superlight 2, Lightspeed receiver
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What happens / Что происходит
+      description: Not shown at all, wrong percent, shown twice… What does the vendor app say? / Не видно, неверный процент, показано дважды… Что показывает программа производителя?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Diagnose report / Отчёт --diagnose
+      description: |
+        Run `"%LOCALAPPDATA%\Programs\BatteryStrip\BatteryStrip.exe" --diagnose` with the device switched on and paste the report.
+        Check it for personal names first (Bluetooth names like "Anna's AirPods").
+        Запустите команду при включённом устройстве и вставьте отчёт. Проверьте, нет ли в нём личных имён.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BatteryStrip and Windows versions / Версии программы и Windows
+      placeholder: 0.3.0-beta.1, Windows 11 24H2

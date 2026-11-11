@@ -1,0 +1,29 @@
+name: Bug / Ошибка
+description: The strip, the device list or the installer misbehaves / Что-то не так с полоской, окном или установкой
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Что произошло
+      description: What you did, what you expected, what you saw. A screenshot helps. / Что делали, что ждали, что увидели. Снимок экрана очень помогает.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup / Окружение
+      description: Windows version, display scale, taskbar position, number of monitors, tools that change the taskbar (StartAllBack, ExplorerPatcher…) / Версия Windows, масштаб, положение панели, мониторы, программы, меняющие панель
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / Журнал
+      description: The last lines of `%LOCALAPPDATA%\BatteryStrip\logs\app.log` (gear → Open log) / Последние строки журнала (шестерёнка → «Открыть журнал»)
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: BatteryStrip version / Версия программы
+      placeholder: 0.3.0-beta.1

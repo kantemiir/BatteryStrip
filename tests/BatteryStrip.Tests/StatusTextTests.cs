@@ -51,7 +51,7 @@ public class StatusTextTests
     public void Estimated_value_is_marked()
     {
         Assert.Equal("Обновлено 5 минут назад, примерно", Ru(Device(estimate: true, minutesAgo: 5)));
-        Assert.Equal("Updated 5 minutes ago, approximate", En(Device(estimate: true, minutesAgo: 5)));
+        Assert.Equal("Updated 5 minutes ago, approx.", En(Device(estimate: true, minutesAgo: 5)));
     }
 
     [Fact]

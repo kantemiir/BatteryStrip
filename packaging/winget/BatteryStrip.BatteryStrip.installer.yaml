@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: BatteryStrip.BatteryStrip
+PackageVersion: VERSION
+MinimumOSVersion: 10.0.19041.0
+InstallerType: exe
+Scope: user
+InstallModes:
+  - silent
+InstallerSwitches:
+  Silent: --install --quiet --start
+  SilentWithProgress: --install --quiet --start
+UpgradeBehavior: install
+ProductCode: BatteryStrip
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/OWNER/BatteryStrip/releases/download/vVERSION/BatteryStrip-VERSION.exe
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.9.0

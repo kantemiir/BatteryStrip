@@ -15,7 +15,8 @@ internal static class Program
         try
         {
             var settings = new Settings(Settings.DefaultPath);
-            Text.Current = Strings.ForCode(settings.Language);
+            int lang = Array.IndexOf(args, "--lang");
+            Text.Current = Strings.ForCode(lang >= 0 && lang + 1 < args.Length ? args[lang + 1] : settings.Language);
 
             if (args.Contains("--diagnose"))
             {
@@ -24,6 +25,8 @@ internal static class Program
             }
             int preview = Array.IndexOf(args, "--preview");
             if (preview >= 0 && preview + 1 < args.Length) return Preview.Run(args[preview + 1]);
+            int flyoutPreview = Array.IndexOf(args, "--preview-flyout");
+            if (flyoutPreview >= 0 && flyoutPreview + 1 < args.Length) return Preview.RunFlyout(args[flyoutPreview + 1]);
             if (args.Contains("--exit")) return SignalExit();
             int icon = Array.IndexOf(args, "--make-icon");
             if (icon >= 0 && icon + 1 < args.Length)

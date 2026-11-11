@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: BatteryStrip.BatteryStrip
+PackageVersion: VERSION
+PackageLocale: en-US
+Publisher: BatteryStrip contributors
+PublisherUrl: https://github.com/OWNER
+PublisherSupportUrl: https://github.com/OWNER/BatteryStrip/issues
+PrivacyUrl: https://github.com/OWNER/BatteryStrip/blob/main/PRIVACY.md
+PackageName: BatteryStrip
+PackageUrl: https://github.com/OWNER/BatteryStrip
+License: MIT
+LicenseUrl: https://github.com/OWNER/BatteryStrip/blob/main/LICENSE
+ShortDescription: Battery charge of wireless mice, headsets and controllers on the Windows 11 taskbar.
+Description: >-
+  A tiny strip on the Windows 11 taskbar, next to the clock, that shows the charge of wireless devices: COMPX mice
+  (Lamzu, Ajazz, Attack Shark), Logitech HID++ devices and the G435, Bluetooth devices, DualSense, DualShock 4 and Xbox
+  controllers. Colour warnings at 20% and 10%, notifications, light and dark theme. No administrator rights, no telemetry.
+Tags:
+  - battery
+  - taskbar
+  - mouse
+  - headset
+  - controller
+  - bluetooth
+ReleaseNotesUrl: https://github.com/OWNER/BatteryStrip/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

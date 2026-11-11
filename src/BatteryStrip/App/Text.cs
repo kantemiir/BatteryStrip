@@ -174,7 +174,7 @@ internal sealed class EnglishStrings : Strings
     public override string NoCharge => "Doesn't report its charge";
     public override string Asleep => "Asleep";
     public override string Charging => "Charging";
-    public override string Approximate => ", approximate";
+    public override string Approximate => ", approx.";
     public override string WaitingForSilence => "Waiting for silence";
     public override string NoAnswer => "No answer";
     public override string NoData => "no data";

@@ -1,0 +1,61 @@
+name: Release
+
+# Push a tag like v0.3.0-beta.1 to build, attest and publish a release.
+# The tag must match <Version> in Directory.Build.props.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test and build
+        shell: pwsh
+        run: ./scripts/build.ps1 -Repository "${{ github.repository }}"
+
+      - name: Check the tag matches the version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          if (-not (Test-Path "dist/BatteryStrip-$tag.exe")) { throw "Tag $tag does not match the built version: $(Get-ChildItem dist)" }
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/BatteryStrip-*.exe
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          $hash = (Get-Content "dist/BatteryStrip-$version.sha256.txt").Split(' ')[0]
+          $notes = @"
+          **SHA-256** ``$hash``
+
+          Verify the build: ``gh attestation verify BatteryStrip-$version.exe --repo ${{ github.repository }}``
+
+          What's new: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/$tag/CHANGELOG.md) · [по-русски](https://github.com/${{ github.repository }}/blob/$tag/CHANGELOG.ru.md)
+
+          Windows may warn that the file is from an unknown publisher: the app is not code-signed yet. Click *More info* → *Run anyway*.
+          Windows может предупредить о неизвестном издателе: у программы пока нет подписи. Нажмите «Подробнее» → «Выполнить в любом случае».
+          "@
+          $files = Get-ChildItem dist | ForEach-Object { $_.FullName }
+          $options = @('--title', "BatteryStrip $version", '--notes', $notes)
+          if ($version.Contains('-')) { $options += '--prerelease' }
+          gh release create $tag @files @options
+          if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }

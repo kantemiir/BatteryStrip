@@ -26,7 +26,7 @@ internal static class Preview
             new[] { Device("m", DeviceKind.Mouse, 18), Device("h", DeviceKind.Headset, 7), Device("g", DeviceKind.Gamepad, 100) },
             new[] { Device("m", DeviceKind.Mouse, 34, charging: true), Device("h", DeviceKind.Headset, 82, asleep: true), Device("g", DeviceKind.Gamepad, null) },
         };
-        float[] scales = [1f, 1.5f, 2.5f];
+        float[] scales = [1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f];
 
         using var glyphs = new GlyphCache();
         var painter = new StripPainter(glyphs);
@@ -68,6 +68,51 @@ internal static class Preview
         bitmap.Save(path, ImageFormat.Png);
         Console.WriteLine(path);
         return 0;
+    }
+
+    /// <summary>
+    /// The --preview-flyout mode: the flyout with sample devices, at 200 % scale, dark and light side by side,
+    /// for the README. Uses the current language.
+    /// </summary>
+    public static int RunFlyout(string path)
+    {
+        DateTime now = DateTime.UtcNow;
+        Strings text = Text.Current;
+        DeviceSnapshot Device(string name, DeviceKind kind, int? percent, double minutesAgo, bool charging = false, bool asleep = false, bool estimate = false) =>
+            new(name, name, kind, percent, charging, asleep, estimate, percent is int p ? ChargeLevels.Of(p) : ChargeLevel.Normal, now.AddMinutes(-minutesAgo));
+
+        var devices = new[]
+        {
+            Device(text.LamzuMouse, DeviceKind.Mouse, 82, 1),
+            Device("Logitech G435", DeviceKind.Headset, 18, 12, estimate: true),
+            Device("DualSense", DeviceKind.Gamepad, 45, 0, charging: true),
+            Device("Keychron K3", DeviceKind.Keyboard, 64, 180, asleep: true),
+        };
+
+        using var glyphs = new GlyphCache();
+        var painter = new Flyout.FlyoutPainter(glyphs, new StripPainter(glyphs));
+        const float scale = 2f;
+        const int pad = 32;
+        string footer = text.WarnsAt(ChargeLevels.LowThreshold, ChargeLevels.CriticalThreshold);
+        Flyout.FlyoutPainter.Image dark = painter.Paint(devices, Palette.Dark, scale, false, now, footer);
+        Flyout.FlyoutPainter.Image light = painter.Paint(devices, Palette.Light, scale, false, now, footer);
+
+        int width = dark.Surface.Width + light.Surface.Width + pad * 3, height = dark.Surface.Height + pad * 2;
+        using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+        using (Graphics g = Graphics.FromImage(bitmap)) g.Clear(Color.FromArgb(0x18, 0x1C, 0x22));
+        Blit(bitmap, dark.Surface, pad, pad, Palette.Dark.Background);
+        Blit(bitmap, light.Surface, pad * 2 + dark.Surface.Width, pad, Palette.Light.Background);
+        bitmap.Save(path, ImageFormat.Png);
+        Console.WriteLine(path);
+        return 0;
+    }
+
+    private static void Blit(Bitmap bitmap, Surface surface, int left, int top, Rgba background)
+    {
+        for (int y = 0; y < surface.Height; y++)
+        {
+            for (int x = 0; x < surface.Width; x++) bitmap.SetPixel(left + x, top + y, Over(surface.Pixels[y * surface.Width + x], background));
+        }
     }
 
     /// <summary>Premultiplied pixel over an opaque background.</summary>

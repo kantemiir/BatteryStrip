@@ -1,47 +1,40 @@
-# Список изменений
+# Changelog
 
-## 0.2.0 — 11 ноября 2026
+[Русская версия](CHANGELOG.ru.md)
 
-- **Bluetooth-устройства**: наушники, колонки, мыши и клавиатуры, заряд которых знает Windows.
-- **Logitech с протоколом HID++**: мыши, клавиатуры и гарнитуры на приёмниках Unifying, Bolt и Lightspeed, по проводу и Bluetooth.
-- **DualSense, DualSense Edge и DualShock 4** по проводу и Bluetooth.
-- **Геймпады Xbox** и совместимые.
-- **Каждое устройство показывается один раз**, даже если его видят два источника: например, мышь Logitech по Bluetooth.
-- **Иконка колонки** для Bluetooth-колонок.
-- **Исправлена утечка памяти** при долгом ожидании тишины в наушниках.
-- **Последние значения сохраняются на диск** не чаще раза в две минуты, а не при каждом чтении.
+## 0.3.0-beta.1 — 2026-11-11
 
-## 0.1.2 — 11 ноября 2026
+First public beta.
 
-- **Текст и иконки рисует DirectWrite** — тот же движок, что у панели задач Windows 11. Линии иконок
-  стали чёткими, ровно в один пиксель, текст в окне по клику — как в системных окнах.
-- **Иконки и цифры под стать панели.** Иконки белые на тёмной панели и чёрные на светлой, как соседние значки Windows.
-  Цифры 12 px, как текст на панели. Контур батарейки немного ярче.
-- **Спящее устройство читается лучше:** бледная заливка и светлые цифры поверх неё вместо тёмных цифр на серой заливке.
+- **English interface** next to Russian, chosen by the Windows language (or `language = ru|en` in settings).
+- **Logitech G435 reading needs your consent.** The app asks once when it finds the receiver, because reading pauses
+  the headset's audio for about a second. It can be turned on or off under the gear.
+- **Optional update check**, once a day against GitHub releases. Downloads are checked against the published SHA-256
+  before a silent install. Off until you agree.
+- **A crowded taskbar no longer hides app buttons.** When the app buttons reach the strip, it drops its device icons;
+  when even the batteries do not fit, the devices move to tray icons.
+- After agreeing to G435 reading, the first read waits for silence instead of interrupting audio.
 
-## 0.1.1 — 11 ноября 2026
+## 0.2.0 — 2026-11-11
 
-- **Наушники G435 обновляются чаще.** Заряд читается в любой паузе звука от 20 секунд, а не только когда звук полностью выключен.
-- **«Обновить заряд сейчас»** в меню читает все устройства сразу, в том числе наушники.
-  Звук в них при этом прерывается примерно на секунду.
-- **Вместо «Спит» — понятная подпись.** Если наушники заняты дольше трёх часов, полоска приглушает их значение
-  и пишет «Ждёт тишины в наушниках».
-- **После выхода из сна** программа даёт приёмнику наушников 20 секунд прийти в себя, а неудачное чтение повторяет через 5 секунд.
-- **Подробный журнал** обмена с приёмником наушников, если чтение не удалось.
+- Bluetooth devices whose charge Windows knows (headphones, speakers, mice, keyboards).
+- Logitech HID++ devices on Unifying, Bolt and Lightspeed receivers, by cable and Bluetooth.
+- DualSense, DualSense Edge and DualShock 4, by cable and Bluetooth.
+- Xbox and compatible controllers through Windows.Gaming.Input.
+- A device seen by two sources is shown once.
+- Speaker icon. Fixed a memory leak while waiting for silence in the headset. Remembered charges are written at most every two minutes.
 
-## 0.1.0 — 10 ноября 2026
+## 0.1.2 — 2026-11-11
 
-Первая версия.
+- Text and icons rendered with DirectWrite, like the Windows 11 taskbar.
+- Icons and numbers in the taskbar's own colour, 12 px numbers, brighter outline, cleaner look for sleeping devices.
 
-- **Полоска на панели задач** слева от трея: иконка устройства и батарейка с процентом. Цвета и пороги — по согласованному макету.
-- **Мыши COMPX** (Lamzu и другие): точный заряд и признак зарядки. Если запущена программа LAMZU, наша программа
-  читает её же ответы и сама мышь не опрашивает.
-- **Logitech G435** через свой приёмник: примерный заряд по напряжению. Читается не чаще раза в 30 минут и только
-  когда наушники молчат.
-- **Окно по клику**: список устройств с их состоянием, настройки под шестерёнкой.
-- **Уведомления** Windows при 20 % и 10 %.
-- **Полоска сама возвращается** после перезапуска Проводника и выхода из сна. Если прикрепиться к панели нельзя,
-  устройства показываются значками в трее.
-- **Подстраивается под светлую и тёмную тему** без перезапуска.
-- **Установка в один файл**: для текущего пользователя, без прав администратора, с автозапуском и чистым удалением.
-- **Режим `--diagnose`** для добавления новых устройств.
+## 0.1.1 — 2026-11-11
+
+- The G435 is read in any 20-second pause in audio; "Refresh now" reads it at once.
+- Clear status when the headset cannot be read for a while; a settling delay and quick retry after sleep.
+
+## 0.1.0 — 2026-11-10
+
+First version: the strip, Lamzu (COMPX) mice and the Logitech G435, the device list, notifications at 20% and 10%,
+recovery after Explorer restarts and sleep, tray-icon fallback, light and dark theme, self-installer.
