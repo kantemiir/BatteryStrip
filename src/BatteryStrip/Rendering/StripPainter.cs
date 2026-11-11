@@ -26,7 +26,7 @@ internal sealed class StripPainter(GlyphCache glyphs)
     // a faded fill with holes reads as dark digits on grey, so the number is drawn on top instead.
     private const double AsleepIcon = 0.45, AsleepOutline = 0.5, AsleepFill = 0.22, AsleepNumber = 0.7;
     private const float BoltGap = 1, BoltFont = 13;
-    private const float DeviceGap = 14;
+    private const float DeviceGap = 14, CompactGap = 8;
 
     private const string Bolt = "\uE945";
     private const string Dash = "\u2013";
@@ -42,36 +42,44 @@ internal sealed class StripPainter(GlyphCache glyphs)
     };
 
     /// <param name="height">Height of the strip in pixels; content is centred vertically.</param>
-    public StripImage Paint(IReadOnlyList<DeviceSnapshot> devices, Palette palette, float scale, int height)
+    /// <param name="compact">Batteries only, without device icons: for a crowded taskbar.</param>
+    public StripImage Paint(IReadOnlyList<DeviceSnapshot> devices, Palette palette, float scale, int height, bool compact = false)
     {
-        float width = 0;
-        foreach (DeviceSnapshot device in devices) width += DeviceWidth(device, scale);
-        width += DeviceGap * scale * Math.Max(0, devices.Count - 1);
-
-        var surface = new Surface(Math.Max(1, (int)Math.Ceiling(width)), height);
+        var surface = new Surface(Math.Max(1, (int)Math.Ceiling(Measure(devices, scale, compact))), height);
         var slots = new List<DeviceSlot>(devices.Count);
         float x = 0;
         foreach (DeviceSnapshot device in devices)
         {
-            float w = DeviceWidth(device, scale);
-            PaintDevice(surface, device, palette, scale, x);
+            float w = DeviceWidth(device, scale, compact);
+            float middle = height / 2f;
+            if (compact)
+            {
+                PaintBattery(surface, device, palette, scale, x, middle);
+            }
+            else
+            {
+                PaintIcon(surface, device, palette, IconFont * scale, x, middle, IconBox * scale);
+                PaintBattery(surface, device, palette, scale, x + (IconBox + IconGap) * scale, middle);
+            }
             slots.Add(new DeviceSlot(device.Id, new RectF(x, 0, w, height)));
-            x += w + DeviceGap * scale;
+            x += w + Gap(compact) * scale;
         }
         surface.MakeClickable();
         return new StripImage(surface, slots);
     }
 
     /// <summary>Width of the strip for these devices, without painting it.</summary>
-    public float Measure(IReadOnlyList<DeviceSnapshot> devices, float scale)
+    public float Measure(IReadOnlyList<DeviceSnapshot> devices, float scale, bool compact = false)
     {
-        float width = DeviceGap * scale * Math.Max(0, devices.Count - 1);
-        foreach (DeviceSnapshot device in devices) width += DeviceWidth(device, scale);
-        return width;
+        float width = Gap(compact) * scale * Math.Max(0, devices.Count - 1);
+        foreach (DeviceSnapshot device in devices) width += DeviceWidth(device, scale, compact);
+        return (float)Math.Ceiling(width);
     }
 
-    private float DeviceWidth(DeviceSnapshot device, float scale) =>
-        (float)Math.Ceiling((IconBox + IconGap) * scale + BatteryWidth(device, scale));
+    private static float Gap(bool compact) => compact ? CompactGap : DeviceGap;
+
+    private float DeviceWidth(DeviceSnapshot device, float scale, bool compact) =>
+        (float)Math.Ceiling((compact ? 0 : (IconBox + IconGap) * scale) + BatteryWidth(device, scale));
 
     /// <summary>Width of a battery with its nub and, when charging, the bolt.</summary>
     public float BatteryWidth(DeviceSnapshot device, float scale)
@@ -87,13 +95,6 @@ internal sealed class StripPainter(GlyphCache glyphs)
         GlyphMask icon = glyphs.Get(GlyphFont.Icons, (float)Math.Round(fontSize * 2) / 2, IconOf(device.Kind), !palette.IsLight);
         int x = (int)Math.Round(left + (box - icon.Width) / 2), y = (int)Math.Round(middle - icon.Height / 2f);
         surface.DrawMask(icon, x, y, device.IsAsleep ? palette.Text.WithOpacity(AsleepIcon) : palette.Text);
-    }
-
-    private void PaintDevice(Surface surface, DeviceSnapshot device, Palette palette, float scale, float left)
-    {
-        float middle = surface.Height / 2f;
-        PaintIcon(surface, device, palette, IconFont * scale, left, middle, IconBox * scale);
-        PaintBattery(surface, device, palette, scale, left + (IconBox + IconGap) * scale, middle);
     }
 
     /// <summary>Draws the battery with its left edge at <paramref name="left"/>, centred on <paramref name="middle"/>.</summary>

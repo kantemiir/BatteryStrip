@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\BatteryStrip\BatteryStrip.csproj" />
   </ItemGroup>
 

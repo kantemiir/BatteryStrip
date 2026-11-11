@@ -25,22 +25,22 @@ internal static class Diagnose
         using (var report = new StreamWriter(reportPath, append: false, Encoding.UTF8))
         {
             var output = new TeeWriter(report, Console.Out);
-            output.WriteLine($"{AppInfo.DisplayName} {AppInfo.Version}, диагностика от {DateTime.Now:dd.MM.yyyy HH:mm}");
+            output.WriteLine($"BatteryStrip {AppInfo.Version} diagnostics, {DateTime.Now:yyyy-MM-dd HH:mm}");
             output.WriteLine($"Windows {Environment.OSVersion.Version}");
             output.WriteLine();
 
-            output.WriteLine("HID-устройства (VID:PID, usage page/usage, размеры отчётов вход/выход/feature):");
+            output.WriteLine("HID collections (VID:PID, usage page/usage, report sizes in/out/feature):");
             foreach (HidCollection c in HidCollection.EnumeratePresent().OrderBy(c => c.VendorId).ThenBy(c => c.ProductId).ThenBy(c => c.UsagePage))
             {
                 output.WriteLine($"  {c.VendorId:X4}:{c.ProductId:X4}  {c.UsagePage:X4}/{c.Usage:X2}  {c.InputLength,3}/{c.OutputLength,3}/{c.FeatureLength,3}  \"{c.Product}\"");
             }
             output.WriteLine();
 
-            output.WriteLine($"Чтение заряда в течение {duration.TotalSeconds:0} секунд:");
+            output.WriteLine($"Reading charge for {duration.TotalSeconds:0} seconds:");
             Log.Mirror = output;
             var store = new DeviceStore(() => DateTime.UtcNow);
             store.Changed += () => WriteDevices(output, store.Snapshot);
-            using (var manager = new DeviceManager(DeviceSources.Create(store, DeviceNaming.Default)))
+            using (var manager = new DeviceManager(DeviceSources.Create(store, DeviceNaming.Default, DeviceOptions.ReadOnly)))
             {
                 manager.Start();
                 Thread.Sleep(duration);
@@ -48,9 +48,9 @@ internal static class Diagnose
             Log.Mirror = null;
 
             output.WriteLine();
-            output.WriteLine("Итог:");
+            output.WriteLine("Result:");
             WriteDevices(output, store.Snapshot);
-            if (store.Snapshot.Count == 0) output.WriteLine("  устройств с известным зарядом не найдено");
+            if (store.Snapshot.Count == 0) output.WriteLine("  no devices with a known charge");
         }
 
         if (openReport) Process.Start(new ProcessStartInfo(reportPath) { UseShellExecute = true });
@@ -61,8 +61,8 @@ internal static class Diagnose
     {
         foreach (DeviceSnapshot d in devices)
         {
-            string charge = d.Percent is int percent ? $"{percent} %" : "нет данных";
-            output.WriteLine($"  {d.Name} [{d.Id}]: {charge}, {StatusText.For(d, DateTime.UtcNow)}");
+            string charge = d.Percent is int percent ? $"{percent} %" : "no data";
+            output.WriteLine($"  {d.Name} [{d.Id}]: {charge}, {StatusText.For(d, DateTime.UtcNow, Strings.English)}");
         }
     }
 

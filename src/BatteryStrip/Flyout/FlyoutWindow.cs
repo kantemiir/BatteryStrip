@@ -9,9 +9,18 @@ using BatteryStrip.Taskbar;
 namespace BatteryStrip.Flyout;
 
 /// <summary>What the flyout's settings button offers. Every action must be safe to call from the flyout thread.</summary>
+/// <param name="GetG435">Null hides the item (no G435 has been seen).</param>
+/// <param name="GetUpdates">Null hides the item (a build without a repository).</param>
+/// <param name="AvailableUpdate">Version of a newer release, or null.</param>
 internal sealed record FlyoutActions(
     Func<bool> GetWarnings,
     Action<bool> SetWarnings,
+    Func<bool?> GetG435,
+    Action<bool> SetG435,
+    Func<bool?> GetUpdates,
+    Action<bool> SetUpdates,
+    Func<string?> AvailableUpdate,
+    Action InstallUpdate,
     Action RefreshDevices,
     Action OpenLog,
     Action Exit);
@@ -166,8 +175,8 @@ internal sealed class FlyoutWindow : NativeWindow
 
         Palette palette = Theme.Current();
         string footer = _actions.GetWarnings()
-            ? $"Предупреждать при {ChargeLevels.LowThreshold}% и {ChargeLevels.CriticalThreshold}%"
-            : "Предупреждения выключены";
+            ? Text.Current.WarnsAt(ChargeLevels.LowThreshold, ChargeLevels.CriticalThreshold)
+            : Text.Current.WarningsOff;
         _image = _painter.Paint(_store.Snapshot, palette, _scale, _gearHovered, DateTime.UtcNow, footer);
 
         int dark = palette.IsLight ? 0 : 1;
@@ -251,17 +260,24 @@ internal sealed class FlyoutWindow : NativeWindow
 
     private void ShowSettingsMenu()
     {
-        const int Autostart = 1, Warnings = 2, Refresh = 3, OpenLog = 4, Exit = 5;
+        const int Autostart = 1, Warnings = 2, Refresh = 3, OpenLog = 4, Exit = 5, G435 = 6, Updates = 7, Update = 8;
         IntPtr menu = CreatePopupMenu();
         try
         {
-            AppendMenu(menu, App.Autostart.IsEnabled ? MF_CHECKED : 0, new IntPtr(Autostart), "Запускать вместе с Windows");
-            AppendMenu(menu, _actions.GetWarnings() ? MF_CHECKED : 0, new IntPtr(Warnings), "Предупреждать о низком заряде");
+            AppendMenu(menu, App.Autostart.IsEnabled ? MF_CHECKED : 0, new IntPtr(Autostart), Text.Current.MenuAutostart);
+            AppendMenu(menu, _actions.GetWarnings() ? MF_CHECKED : 0, new IntPtr(Warnings), Text.Current.MenuWarnings);
+            if (_actions.GetG435() is bool g435) AppendMenu(menu, g435 ? MF_CHECKED : 0, new IntPtr(G435), Text.Current.MenuG435);
+            if (_actions.GetUpdates() is bool updates) AppendMenu(menu, updates ? MF_CHECKED : 0, new IntPtr(Updates), Text.Current.MenuUpdates);
+            if (_actions.AvailableUpdate() is string version)
+            {
+                AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
+                AppendMenu(menu, 0, new IntPtr(Update), Text.Current.MenuInstallUpdate(version));
+            }
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
-            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить заряд сейчас");
-            AppendMenu(menu, 0, new IntPtr(OpenLog), "Открыть журнал");
+            AppendMenu(menu, 0, new IntPtr(Refresh), Text.Current.MenuRefresh);
+            AppendMenu(menu, 0, new IntPtr(OpenLog), Text.Current.MenuOpenLog);
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
-            AppendMenu(menu, 0, new IntPtr(Exit), "Выход");
+            AppendMenu(menu, 0, new IntPtr(Exit), Text.Current.MenuExit);
 
             if (_image == null || !User32.GetWindowRect(Handle, out User32.RECT window)) return;
             int x = window.Left + (int)_image.Gear.X, y = window.Top + (int)_image.Gear.Bottom;
@@ -288,6 +304,16 @@ internal sealed class FlyoutWindow : NativeWindow
                     break;
                 case Refresh:
                     _actions.RefreshDevices();
+                    break;
+                case G435:
+                    _actions.SetG435(_actions.GetG435() != true);
+                    break;
+                case Updates:
+                    _actions.SetUpdates(_actions.GetUpdates() != true);
+                    break;
+                case Update:
+                    Hide();
+                    _actions.InstallUpdate();
                     break;
                 case OpenLog:
                     Hide();

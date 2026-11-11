@@ -177,14 +177,7 @@ internal static class Hidpp
         return text.ToString();
     }
 
-    public static string KindName(DeviceKind kind) => kind switch
-    {
-        DeviceKind.Mouse => "Мышь Logitech",
-        DeviceKind.Keyboard => "Клавиатура Logitech",
-        DeviceKind.Headset => "Наушники Logitech",
-        DeviceKind.Gamepad => "Геймпад Logitech",
-        _ => "Устройство Logitech",
-    };
+    public static string KindName(DeviceKind kind) => App.Text.Current.LogitechDevice(kind);
 
     /// <summary>Device indexes to look at behind a connection.</summary>
     public static IReadOnlyList<byte> CandidateDevices(ushort productId) =>

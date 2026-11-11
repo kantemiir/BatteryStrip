@@ -19,6 +19,9 @@
 
   <ItemGroup>
     <Reference Include="System.Drawing" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
 
   <!-- Windows Runtime metadata for toast notifications; present on every Windows 10 and 11. -->

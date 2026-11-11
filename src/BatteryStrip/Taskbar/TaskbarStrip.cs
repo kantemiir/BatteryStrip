@@ -20,6 +20,9 @@ internal sealed class TaskbarStrip : IDisposable
     /// <summary>Gap between the strip and the notification area, at 100 % scale.</summary>
     private const float TrayGap = 8;
 
+    /// <summary>Space kept free between the last app button and the strip, at 100 % scale.</summary>
+    private const float AppGap = 8;
+
     private const int WatchdogMs = 2000;
     private const int LayoutDelayMs = 50;
 
@@ -29,6 +32,7 @@ internal sealed class TaskbarStrip : IDisposable
     private static readonly IntPtr WatchdogTimer = new(1);
     private static readonly IntPtr LayoutTimer = new(2);
     private const int WM_DEVICES_CHANGED = User32.WM_APP + 1;
+    private const int WM_TASKLIST_CHANGED = User32.WM_APP + 2;
 
     private readonly DeviceStore _store;
     private readonly GlyphCache _glyphs = new();
@@ -36,6 +40,7 @@ internal sealed class TaskbarStrip : IDisposable
     private readonly BroadcastWindow _broadcasts = new();
     private readonly int _taskbarCreatedMessage = User32.RegisterWindowMessage("TaskbarCreated");
     private readonly User32.WinEventProc _winEventProc; // kept alive while the hook exists
+    private readonly TaskListWatcher _taskList = new();
 
     private StripWindow? _strip;
     private TaskbarPlace? _place;
@@ -46,6 +51,7 @@ internal sealed class TaskbarStrip : IDisposable
     private IReadOnlyList<DeviceSnapshot> _devices = Array.Empty<DeviceSnapshot>();
     private DateTime? _brokenSince;
     private bool _reportedBroken;
+    private bool _fits = true;
     private string? _lastProblem;
 
     /// <summary>A device on the strip was clicked; the argument is its id, or null for a click between devices.</summary>
@@ -57,6 +63,12 @@ internal sealed class TaskbarStrip : IDisposable
     /// <summary>Attaching has failed for a while (true) or works again (false).</summary>
     public event Action<bool>? HealthChanged;
 
+    /// <summary>
+    /// The app buttons left too little room for the strip even without device icons (false), or there is
+    /// room again (true). While it does not fit, the strip is hidden and the fallback shows the devices.
+    /// </summary>
+    public event Action<bool>? FitChanged;
+
     /// <summary>The taskbar was recreated or the computer woke up: device lists may be stale too.</summary>
     public event Action? EnvironmentChanged;
 
@@ -65,6 +77,8 @@ internal sealed class TaskbarStrip : IDisposable
         _strip != null && _strip.Handle != IntPtr.Zero && User32.GetWindowRect(_strip.Handle, out User32.RECT rect) ? rect : null;
 
     public bool IsHealthy => !_reportedBroken;
+
+    public bool Fits => _fits;
 
     /// <summary>A top-level window of this thread that can own pop-up menus.</summary>
     public IntPtr MenuOwner => _broadcasts.Handle;
@@ -76,6 +90,7 @@ internal sealed class TaskbarStrip : IDisposable
         _winEventProc = OnWinEvent;
         _broadcasts.Message += OnBroadcast;
         _store.Changed += () => User32.PostMessage(_broadcasts.Handle, WM_DEVICES_CHANGED, IntPtr.Zero, IntPtr.Zero);
+        _taskList.Changed += () => User32.PostMessage(_broadcasts.Handle, WM_TASKLIST_CHANGED, IntPtr.Zero, IntPtr.Zero);
         User32.SetTimer(_broadcasts.Handle, WatchdogTimer, WatchdogMs, IntPtr.Zero);
         _devices = _store.Snapshot;
         Attach("start");
@@ -84,6 +99,7 @@ internal sealed class TaskbarStrip : IDisposable
     public void Dispose()
     {
         User32.KillTimer(_broadcasts.Handle, WatchdogTimer);
+        _taskList.Dispose();
         Unhook();
         _strip?.Dispose();
         _broadcasts.Dispose();
@@ -95,6 +111,7 @@ internal sealed class TaskbarStrip : IDisposable
         if (message == _taskbarCreatedMessage)
         {
             Log.Info("Explorer recreated the taskbar.");
+            _taskList.CheckSoon();
             Attach("taskbar recreated");
             EnvironmentChanged?.Invoke();
             return true;
@@ -104,6 +121,10 @@ internal sealed class TaskbarStrip : IDisposable
         {
             case WM_DEVICES_CHANGED:
                 _devices = _store.Snapshot;
+                Render();
+                return true;
+
+            case WM_TASKLIST_CHANGED:
                 Render();
                 return true;
 
@@ -216,9 +237,24 @@ internal sealed class TaskbarStrip : IDisposable
             return;
         }
 
-        StripImage image = _painter.Paint(_devices, _palette, place.Scale, place.Height);
+        int right = place.TrayLeft - (int)Math.Round(TrayGap * place.Scale);
+        int? appsRight = _taskList.Right == int.MinValue ? null : _taskList.Right - place.TaskbarRect.Left;
+        StripFit fit = StripLayout.Choose(right, appsRight, (int)Math.Round(AppGap * place.Scale),
+            _painter.Measure(_devices, place.Scale), _painter.Measure(_devices, place.Scale, compact: true));
+        bool compact = fit == StripFit.Compact;
+        if (fit == StripFit.None)
+        {
+            User32.ShowWindow(hwnd, User32.SW_HIDE);
+            _image = null;
+            MarkHealthy();
+            SetFits(false);
+            return;
+        }
+        SetFits(true);
+
+        StripImage image = _painter.Paint(_devices, _palette, place.Scale, place.Height, compact);
         int width = image.Surface.Width;
-        int x = place.TrayLeft - width - (int)Math.Round(TrayGap * place.Scale);
+        int x = right - width;
 
         if (!LayeredBitmap.Show(hwnd, image.Surface))
         {
@@ -303,6 +339,14 @@ internal sealed class TaskbarStrip : IDisposable
 
     /// <summary>Coalesces bursts of geometry changes into one layout pass.</summary>
     private void ScheduleLayout() => User32.SetTimer(_broadcasts.Handle, LayoutTimer, LayoutDelayMs, IntPtr.Zero);
+
+    private void SetFits(bool fits)
+    {
+        if (fits == _fits) return;
+        _fits = fits;
+        Log.Info(fits ? "The strip fits next to the app buttons again." : "No room next to the app buttons; the strip is hidden.");
+        FitChanged?.Invoke(fits);
+    }
 
     private void MarkBroken(string reason)
     {

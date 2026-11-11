@@ -18,7 +18,7 @@ internal enum WakeReason
     /// <summary>The computer woke from sleep or Explorer restarted.</summary>
     Resumed,
 
-    /// <summary>The user chose "Обновить устройства": read everything now.</summary>
+    /// <summary>The user chose "Refresh now": read everything now.</summary>
     UserRefresh,
 }
 

@@ -82,7 +82,7 @@ internal sealed class CompxSource(DeviceStore store, DeviceNaming naming, Contai
     private static string DefaultName()
     {
         string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        return Directory.Exists(Path.Combine(programFiles, "LAMZU Gaming Mouse")) ? "Мышь Lamzu" : "Мышь";
+        return Directory.Exists(Path.Combine(programFiles, "LAMZU Gaming Mouse")) ? Text.Current.LamzuMouse : Text.Current.Mouse;
     }
 }
 

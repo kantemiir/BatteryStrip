@@ -14,6 +14,9 @@ internal static class Program
         Log.Start(AppInfo.LogDirectory);
         try
         {
+            var settings = new Settings(Settings.DefaultPath);
+            Text.Current = Strings.ForCode(settings.Language);
+
             if (args.Contains("--diagnose"))
             {
                 int seconds = args.SkipWhile(a => a != "--seconds").Skip(1).Select(int.Parse).DefaultIfEmpty(40).First();
@@ -31,7 +34,7 @@ internal static class Program
             if (args.Contains("--test-notification"))
             {
                 Notifier.Register();
-                Notifier.Show(AppInfo.DisplayName, "Так будут выглядеть предупреждения о низком заряде.");
+                Notifier.Show(AppInfo.DisplayName, Text.Current.NotificationSample);
                 Thread.Sleep(1000);
                 return 0;
             }
@@ -39,13 +42,14 @@ internal static class Program
             if (args.Contains("--install") && args.Contains("--quiet"))
             {
                 Installer.Install();
+                if (args.Contains("--start")) Installer.StartInstalled();
                 return 0;
             }
 
             // Started from anywhere but the install folder (a downloaded file): offer to install.
             // --run skips that, for running a development build in place.
-            if (!Installer.IsRunningInstalled && !args.Contains("--run")) return Installer.RunInteractive();
-            return RunApp(forceTray: args.Contains("--tray"));
+            if (!Installer.IsRunningInstalled && !args.Contains("--run")) return Installer.RunInteractive(settings);
+            return RunApp(settings, forceTray: args.Contains("--tray"));
         }
         catch (Exception exception)
         {
@@ -54,7 +58,7 @@ internal static class Program
         }
     }
 
-    private static int RunApp(bool forceTray)
+    private static int RunApp(Settings settings, bool forceTray)
     {
         using var single = new Mutex(initiallyOwned: true, @"Local\BatteryStrip.Running", out bool first);
         if (!first)
@@ -70,7 +74,7 @@ internal static class Program
             e.SetObserved();
         };
 
-        using var host = new AppHost(forceTray);
+        using var host = new AppHost(settings, forceTray);
         host.Run();
         return 0;
     }

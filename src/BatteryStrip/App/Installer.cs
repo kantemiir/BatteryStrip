@@ -28,12 +28,12 @@ internal static class Installer
     public static bool IsInstalled => File.Exists(InstalledExe);
 
     /// <summary>Asks, installs or updates, and starts the installed copy.</summary>
-    public static int RunInteractive()
+    public static int RunInteractive(Settings settings)
     {
         string? installedVersion = IsInstalled ? FileVersionInfo.GetVersionInfo(InstalledExe).ProductVersion : null;
         string question = installedVersion == null
-            ? $"Установить «{AppInfo.DisplayName}» {AppInfo.Version}?\n\nПрограмма покажет заряд беспроводных устройств на панели задач и будет запускаться вместе с Windows. Права администратора не нужны."
-            : $"«{AppInfo.DisplayName}» уже установлена (версия {installedVersion}).\n\nЗаменить её версией {AppInfo.Version}? Настройки и сохранённые значения останутся.";
+            ? Text.Current.InstallQuestion(AppInfo.Version)
+            : Text.Current.UpdateQuestion(installedVersion, AppInfo.Version);
 
         if (!Dialogs.Confirm(question)) return 1;
 
@@ -44,14 +44,18 @@ internal static class Installer
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             Log.Error("Install failed", exception);
-            Dialogs.Error($"Не удалось установить программу:\n{exception.Message}");
+            Dialogs.Error(Text.Current.InstallFailed(exception.Message));
             return 2;
         }
 
-        Process.Start(new ProcessStartInfo(InstalledExe) { UseShellExecute = false });
-        Dialogs.Info($"Готово. «{AppInfo.DisplayName}» установлена и запущена.\n\nПолоска появится слева от значков в правом углу панели задач, когда программа прочитает заряд первого устройства.");
+        if (AppInfo.HasRepository && settings.UpdateChecks == null) settings.UpdateChecks = Dialogs.Ask(Text.Current.AskUpdates);
+
+        StartInstalled();
+        Dialogs.Info(Text.Current.Installed);
         return 0;
     }
+
+    public static void StartInstalled() => Process.Start(new ProcessStartInfo(InstalledExe) { UseShellExecute = false })?.Dispose();
 
     /// <summary>Copies the exe and registers it. Stops a running copy first.</summary>
     public static void Install()
@@ -74,7 +78,7 @@ internal static class Installer
     /// <summary>Called from "Settings → Apps → Uninstall". Removes everything the program created.</summary>
     public static int Uninstall(bool quiet)
     {
-        if (!quiet && !Dialogs.Confirm($"Удалить «{AppInfo.DisplayName}»?\n\nПрограмма, её настройки и журнал будут удалены.")) return 1;
+        if (!quiet && !Dialogs.Confirm(Text.Current.UninstallQuestion)) return 1;
 
         StopRunningCopy();
         Autostart.Set(false, InstalledExe);
@@ -91,7 +95,7 @@ internal static class Installer
         if (IsRunningInstalled) ScheduleFolderRemoval(AppInfo.InstallDirectory);
         else TryDelete(() => Directory.Delete(AppInfo.InstallDirectory, recursive: true));
 
-        if (!quiet) Dialogs.Info($"«{AppInfo.DisplayName}» удалена.");
+        if (!quiet) Dialogs.Info(Text.Current.Uninstalled);
         return 0;
     }
 
@@ -276,11 +280,16 @@ internal static class Dialogs
     public static bool Confirm(string text) =>
         MessageBox(IntPtr.Zero, text, AppInfo.DisplayName, MB_OKCANCEL | MB_ICONQUESTION | MB_SETFOREGROUND) == IDOK;
 
+    /// <summary>A yes/no question; true for "Yes".</summary>
+    public static bool Ask(string text) =>
+        MessageBox(IntPtr.Zero, text, AppInfo.DisplayName, MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST) == IDYES;
+
     public static void Info(string text) => MessageBox(IntPtr.Zero, text, AppInfo.DisplayName, MB_ICONINFORMATION | MB_SETFOREGROUND);
 
     public static void Error(string text) => MessageBox(IntPtr.Zero, text, AppInfo.DisplayName, MB_ICONERROR | MB_SETFOREGROUND);
 
-    private const int MB_OKCANCEL = 0x1, MB_ICONERROR = 0x10, MB_ICONQUESTION = 0x20, MB_ICONINFORMATION = 0x40, MB_SETFOREGROUND = 0x10000, IDOK = 1;
+    private const int MB_OKCANCEL = 0x1, MB_YESNO = 0x4, MB_ICONERROR = 0x10, MB_ICONQUESTION = 0x20, MB_ICONINFORMATION = 0x40;
+    private const int MB_SETFOREGROUND = 0x10000, MB_TOPMOST = 0x40000, IDOK = 1, IDYES = 6;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBox(IntPtr owner, string text, string caption, int type);

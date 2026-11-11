@@ -89,7 +89,7 @@ internal sealed class GameControllerSource : IDeviceSource
 
             string id = "pad:" + StableId(controller);
             names.Add(controller.DisplayName);
-            string name = _naming.Resolve(id, string.IsNullOrWhiteSpace(controller.DisplayName) ? "Геймпад" : controller.DisplayName);
+            string name = _naming.Resolve(id, string.IsNullOrWhiteSpace(controller.DisplayName) ? Text.Current.Gamepad : controller.DisplayName);
             found[id] = (new DeviceDescriptor(id, name, DeviceKind.Gamepad), percent, report.Status == BatteryStatus.Charging);
         }
 

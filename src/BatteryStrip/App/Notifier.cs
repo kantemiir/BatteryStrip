@@ -57,7 +57,7 @@ internal static class Notifier
     public static void LowBattery(DeviceSnapshot device, int threshold)
     {
         string title = $"{device.Name}: {device.Percent} %";
-        string body = threshold <= ChargeLevels.CriticalThreshold ? "Заряд почти закончился, пора зарядить." : "Заряд меньше 20 %.";
+        string body = threshold <= ChargeLevels.CriticalThreshold ? Text.Current.CriticalBattery : Text.Current.LowBattery;
         Show(title, body);
     }
 

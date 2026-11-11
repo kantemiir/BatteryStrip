@@ -171,7 +171,7 @@ internal sealed class TrayIcons : NativeWindow
 
     private static string Tooltip(DeviceSnapshot device)
     {
-        string charge = device.Percent is int percent ? $"{percent} %" : "нет данных";
+        string charge = device.Percent is int percent ? $"{percent} %" : Text.Current.NoData;
         string text = $"{device.Name}: {charge}\n{StatusText.For(device, DateTime.UtcNow)}";
         return text.Length > 127 ? text.Substring(0, 127) : text;
     }

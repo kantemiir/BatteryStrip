@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using BatteryStrip.App;
 using BatteryStrip.Core;
 using Xunit;
 
@@ -165,7 +166,7 @@ public class DeviceStoreTests
         store.Report(Headset.Id, new DeviceReport.Stale("Ждёт тишины в наушниках"));
         DeviceSnapshot shown = Assert.Single(store.Snapshot);
         Assert.True(shown.IsAsleep);
-        Assert.Equal("Ждёт тишины в наушниках, данные 4 часа назад", StatusText.For(shown, _now));
+        Assert.Equal("Ждёт тишины в наушниках, данные 4 часа назад", StatusText.For(shown, _now, Strings.Russian));
     }
 
     [Fact]

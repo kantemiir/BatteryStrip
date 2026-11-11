@@ -76,7 +76,7 @@ internal sealed class BluetoothSource : IDeviceSource
 
             // A dual-mode device has a classic and a Low Energy node; both lead to the same address.
             string id = "bt:" + address;
-            string name = _naming.Resolve(id, friendlyName ?? "Bluetooth-устройство");
+            string name = _naming.Resolve(id, friendlyName ?? Text.Current.BluetoothDevice);
             DeviceKind kind = KindOf(node.GetStrings(DevicePropertyKey.ContainerCategory));
             found[id] = (new DeviceDescriptor(id, name, kind), percent);
         }

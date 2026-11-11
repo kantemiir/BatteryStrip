@@ -18,7 +18,8 @@ internal sealed class AppHost : IDisposable
     private static readonly TimeSpan SaveDelay = TimeSpan.FromMinutes(2);
 
     private readonly DeviceStore _store = new(() => DateTime.UtcNow);
-    private readonly Settings _settings = new(Settings.DefaultPath);
+    private readonly Settings _settings;
+    private readonly UpdateChecker _updates;
     private readonly FlyoutWindow _flyout;
     private readonly DeviceManager _devices;
     private readonly TaskbarStrip _strip;
@@ -28,10 +29,12 @@ internal sealed class AppHost : IDisposable
     private readonly RegisteredWaitHandle _exitWait;
     private readonly int _mainThreadId = GetCurrentThreadId();
     private int _savePending;
+    private int _askedG435;
 
     /// <param name="forceTray">Show tray icons even while the strip works (for testing the fallback).</param>
-    public AppHost(bool forceTray = false)
+    public AppHost(Settings settings, bool forceTray = false)
     {
+        _settings = settings;
         _store.Import(ChargeMemory.Load(ChargeMemory.DefaultPath));
         Notifier.Register();
         _store.LowBattery += (device, threshold) =>
@@ -51,9 +54,22 @@ internal sealed class AppHost : IDisposable
         _strip = new TaskbarStrip(_store);
         _strip.ContextMenuRequested += ShowMenu;
 
+        _updates = new UpdateChecker(() => _settings.UpdateChecks == true);
+        _updates.Found += update => Notifier.Show(Text.Current.UpdateAvailable(update.Version.ToString()), Text.Current.UpdateAvailableBody);
+
         _flyout = FlyoutWindow.StartThread(_store, new FlyoutActions(
             GetWarnings: () => _settings.Warnings,
             SetWarnings: value => _settings.Warnings = value,
+            GetG435: () => _settings.G435Reading,
+            SetG435: value =>
+            {
+                _settings.G435Reading = value;
+                _devices?.RequestRefresh(); // the first read waits for silence
+            },
+            GetUpdates: () => AppInfo.HasRepository ? _settings.UpdateChecks == true : null,
+            SetUpdates: value => _settings.UpdateChecks = value,
+            AvailableUpdate: () => _updates.Available?.Version.ToString(),
+            InstallUpdate: InstallUpdate,
             RefreshDevices: () => _devices?.RequestRefresh(WakeReason.UserRefresh),
             OpenLog: OpenLog,
             Exit: RequestExit));
@@ -69,11 +85,15 @@ internal sealed class AppHost : IDisposable
             if (User32.GetCursorPos(out User32.POINT cursor)) _flyout.Toggle(new User32.RECT { Left = cursor.X, Top = cursor.Y, Right = cursor.X, Bottom = cursor.Y });
         };
         _tray.Enabled = forceTray;
-        _strip.HealthChanged += broken => _tray.Enabled = broken || forceTray;
+        _strip.HealthChanged += _ => UpdateTray(forceTray);
+        _strip.FitChanged += _ => UpdateTray(forceTray);
 
-        _devices = new DeviceManager(DeviceSources.Create(_store, new DeviceNaming(_settings.DeviceNames)));
+        var options = new DeviceOptions(() => _settings.G435Reading, AskAboutG435);
+        _devices = new DeviceManager(DeviceSources.Create(_store, new DeviceNaming(_settings.DeviceNames), options));
         _strip.EnvironmentChanged += () => _devices.RequestRefresh(WakeReason.Resumed);
         _devices.Start();
+
+        if (AppInfo.HasRepository && _settings.UpdateChecks == null) InBackground(() => _settings.UpdateChecks = Dialogs.Ask(Text.Current.AskUpdates));
 
         _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
         _exitWait = ThreadPool.RegisterWaitForSingleObject(_exitEvent, (_, _) => RequestExit(), null, Timeout.Infinite, executeOnlyOnce: true);
@@ -98,6 +118,7 @@ internal sealed class AppHost : IDisposable
     {
         _exitWait.Unregister(null);
         _exitEvent.Dispose();
+        _updates.Dispose();
         _tray.Dispose();
         _flyout.Dispose();
         _strip.Dispose();
@@ -107,6 +128,44 @@ internal sealed class AppHost : IDisposable
     }
 
     private void Save() => ChargeMemory.Save(ChargeMemory.DefaultPath, _store.Export());
+
+    /// <summary>Asks once per run whether the G435 may be read; the question is a message box on its own thread.</summary>
+    private void AskAboutG435()
+    {
+        if (Interlocked.Exchange(ref _askedG435, 1) != 0) return;
+        InBackground(() =>
+        {
+            _settings.G435Reading = Dialogs.Ask(Text.Current.AskG435);
+            _devices.RequestRefresh(); // the first read waits for silence
+        });
+    }
+
+    private void InstallUpdate()
+    {
+        if (_updates.Available is not AvailableUpdate update) return;
+        InBackground(() =>
+        {
+            if (UpdateChecker.Install(update) is string error) Dialogs.Error(Text.Current.UpdateFailed(error));
+        });
+    }
+
+    /// <summary>Message boxes and downloads must never run on the strip's thread, which the taskbar shares.</summary>
+    private static void InBackground(Action action) =>
+        new Thread(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                Log.Error("Background task failed", exception);
+            }
+        })
+        { IsBackground = true }.Start();
+
+    /// <summary>Tray icons stand in for the strip while it is broken or has no room.</summary>
+    private void UpdateTray(bool forceTray) => _tray.Enabled = forceTray || !_strip.IsHealthy || !_strip.Fits;
 
     private static void OpenLog()
     {
@@ -126,9 +185,9 @@ internal sealed class AppHost : IDisposable
         IntPtr menu = CreatePopupMenu();
         try
         {
-            AppendMenu(menu, 0, new IntPtr(Refresh), "Обновить заряд сейчас");
+            AppendMenu(menu, 0, new IntPtr(Refresh), Text.Current.MenuRefresh);
             AppendMenu(menu, 0x800, IntPtr.Zero, null); // separator
-            AppendMenu(menu, 0, new IntPtr(Exit), "Выход");
+            AppendMenu(menu, 0, new IntPtr(Exit), Text.Current.MenuExit);
 
             // A menu needs a foreground owner to close when the user clicks elsewhere.
             IntPtr owner = _strip.MenuOwner;

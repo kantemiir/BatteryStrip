@@ -10,7 +10,7 @@ using BatteryStrip.Devices.Hid;
 namespace BatteryStrip.Devices.G435;
 
 /// <summary>Logitech G435 headset on its original LIGHTSPEED receiver (046D:0ACB).</summary>
-internal sealed class G435Source(DeviceStore store, DeviceNaming naming, ContainerClaims claims) : IDeviceSource
+internal sealed class G435Source(DeviceStore store, DeviceNaming naming, ContainerClaims claims, DeviceOptions options) : IDeviceSource
 {
     public const string Owner = "g435";
 
@@ -27,7 +27,10 @@ internal sealed class G435Source(DeviceStore store, DeviceNaming naming, Contain
             c.VendorId == VendorId && c.ProductId == ProductId && c.UsagePage == ServicePage
             && c.FeatureLength == G435Protocol.FeatureLength && c.InputLength > 0);
 
-        if (service != null)
+        // Reading pauses the headset's audio and switches the receiver's mode, so it needs the user's consent.
+        bool? allowed = service != null ? options.G435Allowed() : null;
+        if (service != null && allowed == null) options.AskG435();
+        if (service != null && allowed == true)
         {
             const string id = "g435:046D:0ACB";
             var descriptor = new DeviceDescriptor(id, naming.Resolve(id, "Logitech G435"), DeviceKind.Headset);
@@ -68,8 +71,8 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     /// <summary>Audio playing into a headset believed to be off for this long means it is probably on.</summary>
     private static readonly TimeSpan BusyMeansOn = TimeSpan.FromSeconds(20);
 
-    private const string WaitingNote = "Ждёт тишины в наушниках";
-    private const string NoAnswerNote = "Нет ответа";
+    private static string WaitingNote => Text.Current.WaitingForSilence;
+    private static string NoAnswerNote => Text.Current.NoAnswer;
 
     private readonly EstimateSmoother _smoother = new();
     private readonly WakeSignal _wake = new();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BatteryStrip.App;
 using BatteryStrip.Core;
 using BatteryStrip.Rendering;
 
@@ -14,7 +15,7 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
     private const float NameFont = 13, StatusFont = 12;
     private const float FooterPadTop = 10, FooterPadBottom = 8, FooterFont = 12, GearFont = 16, GearBox = 28;
 
-    private const string Gear = "";
+    private const string Gear = "\uE713";
 
     /// <summary>Screen-independent result: pixels and where the gear button is.</summary>
     public sealed record Image(Surface Surface, RectF Gear);
@@ -35,7 +36,7 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
 
         if (devices.Count == 0)
         {
-            GlyphMask empty = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), "Устройства с известным зарядом не найдены", (int)(right - left), !palette.IsLight);
+            GlyphMask empty = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), Text.Current.NoDevices, (int)(right - left), !palette.IsLight);
             surface.DrawMask(empty, (int)left, (int)Math.Round(y + (rowHeight - empty.Height) / 2), palette.SecondaryText);
             y += rowHeight;
             Divider(surface, palette, left, right, y);
