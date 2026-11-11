@@ -23,6 +23,7 @@ internal sealed record FlyoutActions(
     Action InstallUpdate,
     Action RefreshDevices,
     Action OpenLog,
+    Action ReportDevices,
     Action Exit);
 
 /// <summary>
@@ -260,7 +261,7 @@ internal sealed class FlyoutWindow : NativeWindow
 
     private void ShowSettingsMenu()
     {
-        const int Autostart = 1, Warnings = 2, Refresh = 3, OpenLog = 4, Exit = 5, G435 = 6, Updates = 7, Update = 8;
+        const int Autostart = 1, Warnings = 2, Refresh = 3, OpenLog = 4, Exit = 5, G435 = 6, Updates = 7, Update = 8, Report = 9;
         IntPtr menu = CreatePopupMenu();
         try
         {
@@ -275,6 +276,7 @@ internal sealed class FlyoutWindow : NativeWindow
             }
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
             AppendMenu(menu, 0, new IntPtr(Refresh), Text.Current.MenuRefresh);
+            AppendMenu(menu, 0, new IntPtr(Report), Text.Current.MenuReport);
             AppendMenu(menu, 0, new IntPtr(OpenLog), Text.Current.MenuOpenLog);
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
             AppendMenu(menu, 0, new IntPtr(Exit), Text.Current.MenuExit);
@@ -318,6 +320,10 @@ internal sealed class FlyoutWindow : NativeWindow
                 case OpenLog:
                     Hide();
                     _actions.OpenLog();
+                    break;
+                case Report:
+                    Hide();
+                    _actions.ReportDevices();
                     break;
                 case Exit:
                     Hide();

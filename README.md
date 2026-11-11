@@ -53,15 +53,12 @@ Not supported yet: Razer, SteelSeries, HyperX, Corsair and other vendor-specific
 
 ### Your device is missing or wrong?
 
-Run
+Turn the device on, click the strip, then the gear → *Report a device*. In under a minute a folder opens with
+`diagnose.txt` selected: the HID devices of the computer and what the app could read. It contains device codes and
+names only and is not sent anywhere by itself. Attach it to a
+[device request](../../issues/new?template=device_request.yml) and say what charge the device's own app shows.
 
-```
-"%LOCALAPPDATA%\Programs\BatteryStrip\BatteryStrip.exe" --diagnose
-```
-
-After 40 seconds a report opens (`%LOCALAPPDATA%\BatteryStrip\diagnose.txt`) with the HID devices of the computer and
-what the app could read. It contains device codes and names only. Attach it to a
-[device request](../../issues/new?template=device_request.yml).
+The same from a command prompt: `"%LOCALAPPDATA%\Programs\BatteryStrip\BatteryStrip.exe" --diagnose`.
 
 ## Settings
 

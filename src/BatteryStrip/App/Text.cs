@@ -33,7 +33,14 @@ internal abstract class Strings
     public abstract string MenuUpdates { get; }
     public abstract string MenuRefresh { get; }
     public abstract string MenuOpenLog { get; }
+    public abstract string MenuReport { get; }
     public abstract string MenuExit { get; }
+
+    // Device report for testers.
+    public abstract string ReportStarted { get; }
+    public abstract string ReportStartedBody { get; }
+    public abstract string ReportReady(string fileName);
+    public abstract string ReportFailed { get; }
     public abstract string MenuInstallUpdate(string version);
 
     // Default device names.
@@ -124,7 +131,14 @@ internal sealed class RussianStrings : Strings
     public override string MenuUpdates => "Проверять обновления";
     public override string MenuRefresh => "Обновить заряд сейчас";
     public override string MenuOpenLog => "Открыть журнал";
+    public override string MenuReport => "Сообщить об устройстве…";
     public override string MenuExit => "Выход";
+
+    public override string ReportStarted => "Собираю отчёт об устройствах";
+    public override string ReportStartedBody => "Это займёт меньше минуты. Устройство, о котором хотите сообщить, должно быть включено и подключено.";
+    public override string ReportReady(string fileName) =>
+        $"Отчёт готов: файл {fileName} выделен в открывшемся окне.\n\nОтправьте его автору программы, например в Telegram, или приложите к заявке на GitHub. Напишите, какое это устройство и какой заряд показывает его родная программа.\n\nВ отчёте только коды и названия устройств и то, что программа смогла прочитать. Сам он никуда не отправляется.";
+    public override string ReportFailed => "Не удалось собрать отчёт. Подробности в журнале.";
     public override string MenuInstallUpdate(string version) => $"Установить версию {version}";
 
     public override string LamzuMouse => "Мышь Lamzu";
@@ -200,7 +214,14 @@ internal sealed class EnglishStrings : Strings
     public override string MenuUpdates => "Check for updates";
     public override string MenuRefresh => "Refresh now";
     public override string MenuOpenLog => "Open log";
+    public override string MenuReport => "Report a device…";
     public override string MenuExit => "Exit";
+
+    public override string ReportStarted => "Collecting a device report";
+    public override string ReportStartedBody => "This takes under a minute. Keep the device you want to report on and connected.";
+    public override string ReportReady(string fileName) =>
+        $"The report is ready: {fileName} is selected in the window that opened.\n\nSend it to the author, for example on Telegram, or attach it to a device request on GitHub. Say which device it is and what charge its own app shows.\n\nThe report holds only device codes and names and what the app could read. It is not sent anywhere by itself.";
+    public override string ReportFailed => "Could not collect the report. See the log for details.";
     public override string MenuInstallUpdate(string version) => $"Install version {version}";
 
     public override string LamzuMouse => "Lamzu mouse";

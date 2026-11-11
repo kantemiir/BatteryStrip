@@ -30,6 +30,7 @@ internal sealed class AppHost : IDisposable
     private readonly int _mainThreadId = GetCurrentThreadId();
     private int _savePending;
     private int _askedG435;
+    private int _reporting;
 
     /// <param name="forceTray">Show tray icons even while the strip works (for testing the fallback).</param>
     public AppHost(Settings settings, bool forceTray = false)
@@ -72,6 +73,7 @@ internal sealed class AppHost : IDisposable
             InstallUpdate: InstallUpdate,
             RefreshDevices: () => _devices?.RequestRefresh(WakeReason.UserRefresh),
             OpenLog: OpenLog,
+            ReportDevices: ReportDevices,
             Exit: RequestExit));
         _strip.DeviceClicked += _ =>
         {
@@ -177,6 +179,38 @@ internal sealed class AppHost : IDisposable
         {
             Log.Warn($"Cannot open the log: {exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// Runs --diagnose in a separate process (the same report a tester would make by hand), then shows the file
+    /// in Explorer so it can be dragged into a chat. Nothing is sent anywhere.
+    /// </summary>
+    private void ReportDevices()
+    {
+        if (Interlocked.Exchange(ref _reporting, 1) != 0) return;
+        Notifier.Show(Text.Current.ReportStarted, Text.Current.ReportStartedBody);
+        InBackground(() =>
+        {
+            try
+            {
+                string report = System.IO.Path.Combine(AppInfo.DataDirectory, "diagnose.txt");
+                var start = new System.Diagnostics.ProcessStartInfo(AppInfo.ExePath, "--diagnose --quiet") { UseShellExecute = false, CreateNoWindow = true };
+                using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(start);
+                bool done = process != null && process.WaitForExit((int)TimeSpan.FromMinutes(2).TotalMilliseconds) && process.ExitCode == 0;
+                if (!done || !System.IO.File.Exists(report))
+                {
+                    Log.Warn("The device report was not created.");
+                    Dialogs.Error(Text.Current.ReportFailed);
+                    return;
+                }
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{report}\"")?.Dispose();
+                Dialogs.Info(Text.Current.ReportReady(System.IO.Path.GetFileName(report)));
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _reporting, 0);
+            }
+        });
     }
 
     private void ShowMenu(int x, int y)
