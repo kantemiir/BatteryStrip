@@ -50,6 +50,28 @@ public class CompxMouseTests
     }
 
     [Fact]
+    public void An_open_cable_outranks_the_receiver_before_its_first_answer()
+    {
+        var (store, mouse) = NewMouse();
+        mouse.OnLinkOpened(Cable, cable: true);
+        mouse.OnBattery(Receiver, cable: false, new CompxBattery(false, 95, true));
+        Assert.Empty(store.Snapshot);
+
+        mouse.OnBattery(Cable, cable: true, new CompxBattery(false, 100, false));
+        Assert.Equal(100, Shown(store));
+    }
+
+    [Fact]
+    public void A_silent_cable_lets_the_receiver_speak()
+    {
+        var (store, mouse) = NewMouse();
+        mouse.OnLinkOpened(Cable, cable: true);
+        mouse.OnSilence(Cable);
+        mouse.OnBattery(Receiver, cable: false, new CompxBattery(false, 64, false));
+        Assert.Equal(64, Shown(store));
+    }
+
+    [Fact]
     public void A_sleeping_receiver_does_not_hide_a_fresh_cable_reading()
     {
         var (store, mouse) = NewMouse();

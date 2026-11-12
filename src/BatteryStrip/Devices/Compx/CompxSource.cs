@@ -101,6 +101,9 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
 
     private readonly object _gate = new();
     private readonly Dictionary<string, (DateTime At, bool Cable)> _lastAnswer = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Cable links that are open and have not gone silent: while there is one, the receiver is not listened to.</summary>
+    private readonly HashSet<string> _cables = new(StringComparer.OrdinalIgnoreCase);
     private readonly FullChargeLatch _latch = new();
     private CompxBattery? _shown;
 
@@ -118,7 +121,8 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
 
             DateTime now = DateTime.UtcNow;
             _lastAnswer[link] = (now, cable);
-            if (!cable && _lastAnswer.Values.Any(a => a.Cable && a.At > now - LinkFreshness)) return;
+            if (cable) _cables.Add(link);
+            else if (_cables.Count > 0) return;
 
             battery = _latch.Apply(battery);
             if (_shown != battery)
@@ -136,15 +140,30 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
         lock (_gate) OnSilenceLocked(link);
     }
 
+    /// <summary>
+    /// A link was opened. A cable link outranks the receiver from this moment, so the receiver's stale answer
+    /// does not flash up while the cable's first answer is on its way.
+    /// </summary>
+    public void OnLinkOpened(string link, bool cable)
+    {
+        if (!cable) return;
+        lock (_gate) _cables.Add(link);
+    }
+
     /// <summary>A link went away (the cable was unplugged): its answers no longer outrank the other link's.</summary>
     public void OnLinkClosed(string link)
     {
-        lock (_gate) _lastAnswer.Remove(link);
+        lock (_gate)
+        {
+            _lastAnswer.Remove(link);
+            _cables.Remove(link);
+        }
     }
 
     private void OnSilenceLocked(string link)
     {
         _lastAnswer.Remove(link);
+        _cables.Remove(link);
         DateTime freshSince = DateTime.UtcNow - LinkFreshness;
         if (_lastAnswer.Values.Any(answered => answered.At > freshSince)) return;
         _shown = null;
@@ -179,6 +198,7 @@ internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCol
 
     private async Task ListenAsync(CancellationToken cancellation)
     {
+        mouse.OnLinkOpened(replies.Path, cable);
         using HidInputPort? input = HidInputPort.Open(replies);
         if (input == null)
         {
