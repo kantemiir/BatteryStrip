@@ -57,7 +57,8 @@ internal sealed class CompxSource(DeviceStore store, DeviceNaming naming, Contai
             }
 
             CompxMouse target = mouse;
-            wanted[replies.Path] = () => new CompxLink(target, requests, replies);
+            bool cable = ReceiverOfCable.ContainsKey(receiver.Key.ProductId);
+            wanted[replies.Path] = () => new CompxLink(target, requests, replies, cable);
         }
 
         claims.Set(Owner, receivers.Where(r => wanted.Keys.Any(path => r.Any(c => c.Path == path))).Select(r => r.Key.ContainerId));
@@ -86,19 +87,26 @@ internal sealed class CompxSource(DeviceStore store, DeviceNaming naming, Contai
     }
 }
 
-/// <summary>One mouse as shown on the strip, fed by one or two links.</summary>
+/// <summary>
+/// One mouse as shown on the strip, fed by one or two links. While the mouse is on its cable, both its cable and
+/// its receiver answer, and they disagree: the cable talks to the mouse itself, the receiver repeats what the mouse
+/// last told it over the air (seen on a Lamzu: the cable said "100 %, charged" while the receiver kept saying
+/// "95 %, charging", and right after plugging in "95 %" against "30 %"). Showing whichever answered last made the
+/// number jump, so while the cable answers, only the cable counts.
+/// </summary>
 internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
 {
     /// <summary>A link that answered this recently outranks another link reporting "asleep".</summary>
     private static readonly TimeSpan LinkFreshness = TimeSpan.FromMinutes(5);
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, DateTime> _lastAnswer = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (DateTime At, bool Cable)> _lastAnswer = new(StringComparer.OrdinalIgnoreCase);
     private readonly FullChargeLatch _latch = new();
+    private CompxBattery? _shown;
 
     public string Id => descriptor.Id;
 
-    public void OnBattery(string link, CompxBattery battery)
+    public void OnBattery(string link, bool cable, CompxBattery battery)
     {
         lock (_gate)
         {
@@ -108,8 +116,16 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
                 return;
             }
 
-            _lastAnswer[link] = DateTime.UtcNow;
+            DateTime now = DateTime.UtcNow;
+            _lastAnswer[link] = (now, cable);
+            if (!cable && _lastAnswer.Values.Any(a => a.Cable && a.At > now - LinkFreshness)) return;
+
             battery = _latch.Apply(battery);
+            if (_shown != battery)
+            {
+                _shown = battery;
+                Log.Info($"{descriptor.Id}: {battery.Percent} %{(battery.IsCharging ? ", charging" : "")} ({(cable ? "cable" : "receiver")}).");
+            }
             store.Report(descriptor.Id, new DeviceReport.Charge(battery.Percent, battery.IsCharging));
         }
     }
@@ -120,11 +136,18 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
         lock (_gate) OnSilenceLocked(link);
     }
 
+    /// <summary>A link went away (the cable was unplugged): its answers no longer outrank the other link's.</summary>
+    public void OnLinkClosed(string link)
+    {
+        lock (_gate) _lastAnswer.Remove(link);
+    }
+
     private void OnSilenceLocked(string link)
     {
         _lastAnswer.Remove(link);
         DateTime freshSince = DateTime.UtcNow - LinkFreshness;
-        if (_lastAnswer.Values.Any(answered => answered > freshSince)) return;
+        if (_lastAnswer.Values.Any(answered => answered.At > freshSince)) return;
+        _shown = null;
         store.Report(descriptor.Id, new DeviceReport.Asleep());
     }
 }
@@ -133,16 +156,28 @@ internal sealed class CompxMouse(DeviceStore store, DeviceDescriptor descriptor)
 /// One connection to a mouse (receiver or cable). Listens for battery replies, including those the vendor
 /// software triggers with its own polling, and asks by itself only when nobody else has for a while.
 /// </summary>
-internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCollection replies) : DeviceSession
+internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCollection replies, bool cable) : DeviceSession
 {
     /// <summary>How often to ask when no other program does. The vendor software asks every 30 seconds.</summary>
     private static readonly TimeSpan AskInterval = TimeSpan.FromMinutes(2);
 
     private static readonly TimeSpan ReplyTimeout = TimeSpan.FromSeconds(1);
 
-    protected override string Name => $"COMPX link {mouse.Id}";
+    protected override string Name => $"COMPX {(cable ? "cable" : "receiver")} {mouse.Id}";
 
     protected override async Task RunAsync(CancellationToken cancellation)
+    {
+        try
+        {
+            await ListenAsync(cancellation).ConfigureAwait(false);
+        }
+        finally
+        {
+            mouse.OnLinkClosed(replies.Path);
+        }
+    }
+
+    private async Task ListenAsync(CancellationToken cancellation)
     {
         using HidInputPort? input = HidInputPort.Open(replies);
         if (input == null)
@@ -157,7 +192,12 @@ internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCol
         while (!cancellation.IsCancellationRequested)
         {
             DateTime now = DateTime.UtcNow;
-            if (now >= nextAsk)
+            if (now >= nextAsk && FullScreen.IsActive())
+            {
+                // During a game the mouse is left alone; replies the vendor software asks for still arrive.
+                nextAsk = now + FullScreen.RecheckAfter;
+            }
+            else if (now >= nextAsk)
             {
                 Ask();
                 nextAsk = now + AskInterval;
@@ -173,7 +213,7 @@ internal sealed class CompxLink(CompxMouse mouse, HidCollection requests, HidCol
                 // Whoever asked, the answer is fresh, so our own next question can wait a full interval.
                 nextAsk = DateTime.UtcNow + AskInterval;
                 replyDue = null;
-                mouse.OnBattery(replies.Path, battery);
+                mouse.OnBattery(replies.Path, cable, battery);
             }
             else if (replyDue is DateTime missed && DateTime.UtcNow >= missed)
             {

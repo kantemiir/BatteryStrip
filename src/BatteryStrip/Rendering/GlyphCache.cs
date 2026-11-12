@@ -27,6 +27,7 @@ internal sealed class GlyphCache : IDisposable
 {
     private readonly Dictionary<(GlyphFont, float, string, bool), GlyphMask> _cache = new();
     private readonly Dictionary<(GlyphFont, float, int, string, bool), GlyphMask> _lines = new();
+    private const int MaxLines = 256;
     private DirectText? _text;
 
     /// <param name="lightText">The mask will be painted in a light colour (on a dark background).</param>
@@ -50,6 +51,8 @@ internal sealed class GlyphCache : IDisposable
         var key = (font, pixelSize, maxWidth, text, lightText);
         if (!_lines.TryGetValue(key, out GlyphMask? mask))
         {
+            // Status lines change with time ("updated 7 minutes ago"), so the cache is kept from growing for ever.
+            if (_lines.Count >= MaxLines) _lines.Clear();
             mask = RasterizeLine(font, pixelSize, text, maxWidth, lightText);
             _lines[key] = mask;
         }

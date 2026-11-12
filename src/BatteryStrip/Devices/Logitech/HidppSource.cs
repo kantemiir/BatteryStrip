@@ -109,6 +109,13 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
 
             while (!cancellation.IsCancellationRequested && !_pump.IsDead)
             {
+                if (FullScreen.IsActive())
+                {
+                    // During a game nothing is sent; battery notifications the devices send by themselves still count.
+                    await ListenAsync(FullScreen.RecheckAfter, cancellation, quiet: true).ConfigureAwait(false);
+                    continue;
+                }
+
                 foreach (byte index in _toProbe.ToArray())
                 {
                     if (await ProbeAsync(index, cancellation).ConfigureAwait(false)) _toProbe.Remove(index);
@@ -124,7 +131,8 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
     }
 
     /// <summary>Handles notifications until <paramref name="duration"/> passes or <see cref="Wake"/> is called.</summary>
-    private async Task ListenAsync(TimeSpan duration, CancellationToken cancellation)
+    /// <param name="quiet">Only take in what devices send; answer nothing with requests of our own.</param>
+    private async Task ListenAsync(TimeSpan duration, CancellationToken cancellation, bool quiet = false)
     {
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         Task wake = _wake.WaitAsync(duration, stop.Token).ContinueWith(_ => { }, TaskScheduler.Default);
@@ -134,7 +142,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
             {
                 Task<byte[]?> next = _pump!.NextAsync(TimeSpan.FromMinutes(1), stop.Token);
                 if (await Task.WhenAny(next, wake).ConfigureAwait(false) != next) return;
-                if (await next.ConfigureAwait(false) is byte[] report) await HandleEventAsync(report, cancellation).ConfigureAwait(false);
+                if (await next.ConfigureAwait(false) is byte[] report) await HandleEventAsync(report, cancellation, quiet).ConfigureAwait(false);
             }
         }
         finally
@@ -143,7 +151,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
         }
     }
 
-    private async Task HandleEventAsync(byte[] report, CancellationToken cancellation)
+    private async Task HandleEventAsync(byte[] report, CancellationToken cancellation, bool quiet)
     {
         switch (Hidpp.ParseEvent(report))
         {
@@ -151,6 +159,11 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
                 if (!connection.Linked)
                 {
                     if (_devices.TryGetValue(connection.Device, out HidppDevice? off)) store.Report(off.Descriptor.Id, new DeviceReport.Asleep());
+                }
+                else if (quiet)
+                {
+                    // Read on the next round, once the full-screen program is gone.
+                    if (!_devices.ContainsKey(connection.Device)) _toProbe.Add(connection.Device);
                 }
                 else if (_devices.TryGetValue(connection.Device, out HidppDevice? on))
                 {

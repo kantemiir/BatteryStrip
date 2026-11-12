@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace BatteryStrip.Rendering;
 
@@ -108,6 +109,55 @@ internal sealed class Surface(int width, int height)
                 if (coverage != 0) Composite(x, y, color, coverage / 255f, 1f);
             }
         }
+    }
+
+    /// <summary>
+    /// Rasterises a closed polygon (points in pixels, any winding) into a coverage mask, antialiased by 8×8
+    /// supersampling. Meant for small shapes such as the charging bolt.
+    /// </summary>
+    public static GlyphMask PolygonMask(IReadOnlyList<(float X, float Y)> points)
+    {
+        float maxX = 0, maxY = 0;
+        foreach (var (x, y) in points)
+        {
+            maxX = Math.Max(maxX, x);
+            maxY = Math.Max(maxY, y);
+        }
+        int width = (int)Math.Ceiling(maxX), height = (int)Math.Ceiling(maxY);
+        if (width <= 0 || height <= 0) return GlyphMask.Empty;
+
+        const int Samples = 8;
+        var coverage = new byte[width * height];
+        for (int py = 0; py < height; py++)
+        {
+            for (int px = 0; px < width; px++)
+            {
+                int inside = 0;
+                for (int sy = 0; sy < Samples; sy++)
+                {
+                    float y = py + (sy + 0.5f) / Samples;
+                    for (int sx = 0; sx < Samples; sx++)
+                    {
+                        if (Contains(points, px + (sx + 0.5f) / Samples, y)) inside++;
+                    }
+                }
+                coverage[py * width + px] = (byte)Math.Round(255.0 * inside / (Samples * Samples));
+            }
+        }
+        return new GlyphMask(width, height, coverage);
+    }
+
+    /// <summary>Even-odd point-in-polygon test.</summary>
+    private static bool Contains(IReadOnlyList<(float X, float Y)> points, float x, float y)
+    {
+        bool inside = false;
+        for (int i = 0, j = points.Count - 1; i < points.Count; j = i++)
+        {
+            var (xi, yi) = points[i];
+            var (xj, yj) = points[j];
+            if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
     }
 
     /// <summary>

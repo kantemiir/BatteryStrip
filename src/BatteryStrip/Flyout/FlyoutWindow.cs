@@ -190,13 +190,19 @@ internal sealed class FlyoutWindow : NativeWindow
         int y = info.rcWork.Bottom - height - gap;
 
         bool wasVisible = User32.IsWindowVisible(Handle);
+        if (wasVisible)
+        {
+            // A refresh of the open flyout keeps its place in the z-order. Raising it again would put it above
+            // the settings menu when a device reports while the menu is open.
+            User32.SetWindowPos(Handle, IntPtr.Zero, x, y, width, height, User32.SWP_NOZORDER | User32.SWP_NOACTIVATE);
+            InvalidateRect(Handle, IntPtr.Zero, false);
+            return;
+        }
+
         User32.SetWindowPos(Handle, new IntPtr(-1) /* HWND_TOPMOST */, x, y, width, height, User32.SWP_SHOWWINDOW);
         InvalidateRect(Handle, IntPtr.Zero, false);
-        if (!wasVisible)
-        {
-            User32.SetForegroundWindow(Handle);
-            User32.SetTimer(Handle, RefreshTimer, 30_000, IntPtr.Zero);
-        }
+        User32.SetForegroundWindow(Handle);
+        User32.SetTimer(Handle, RefreshTimer, 30_000, IntPtr.Zero);
     }
 
     private void Hide()
@@ -283,6 +289,7 @@ internal sealed class FlyoutWindow : NativeWindow
 
             if (_image == null || !User32.GetWindowRect(Handle, out User32.RECT window)) return;
             int x = window.Left + (int)_image.Gear.X, y = window.Top + (int)_image.Gear.Bottom;
+            MenuTheme.Apply(dark: !Theme.Current().IsLight);
 
             _menuOpen = true;
             int choice;

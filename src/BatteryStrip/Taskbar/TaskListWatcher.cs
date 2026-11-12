@@ -11,12 +11,21 @@ namespace BatteryStrip.Taskbar;
 /// </summary>
 internal sealed class TaskListWatcher : IDisposable
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(10);
+    /// <summary>Look this often while the app buttons are close to the strip: one new button could reach it.</summary>
+    private static readonly TimeSpan NearInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>Look this often while there is room for several more buttons, or while nothing is shown.</summary>
+    private static readonly TimeSpan FarInterval = TimeSpan.FromSeconds(30);
+
+    /// <summary>Room, at 100 % scale, that counts as "several more buttons" (a button is about 44 px wide).</summary>
+    private const int FarRoom = 200;
+
     private const string ButtonClass = "Taskbar.TaskListButtonAutomationPeer";
 
     private readonly Timer _timer;
     private readonly object _gate = new();
     private int _right = int.MinValue;
+    private int _room = int.MinValue;
     private AutomationElement? _frame;
     private IntPtr _frameTaskbar;
 
@@ -25,14 +34,23 @@ internal sealed class TaskListWatcher : IDisposable
 
     public TaskListWatcher()
     {
-        _timer = new Timer(_ => Check(), null, TimeSpan.Zero, Interval);
+        _timer = new Timer(_ => Check(), null, TimeSpan.Zero, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>Right edge of the last app button in screen pixels; <see cref="int.MinValue"/> while unknown.</summary>
     public int Right => Volatile.Read(ref _right);
 
+    /// <summary>
+    /// Free space between the last app button and the strip, in pixels at 100 % scale, as the strip last laid
+    /// itself out; <see cref="int.MaxValue"/> while the strip shows nothing. Sets how often to look.
+    /// </summary>
+    public int Room
+    {
+        set => Volatile.Write(ref _room, value);
+    }
+
     /// <summary>Looks again soon, for example after the taskbar was recreated.</summary>
-    public void CheckSoon() => _timer.Change(TimeSpan.FromMilliseconds(500), Interval);
+    public void CheckSoon() => _timer.Change(TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan);
 
     public void Dispose() => _timer.Dispose();
 
@@ -41,8 +59,12 @@ internal sealed class TaskListWatcher : IDisposable
         if (!Monitor.TryEnter(_gate)) return;
         try
         {
-            int right = Measure();
-            if (Interlocked.Exchange(ref _right, right) != right) Changed?.Invoke();
+            // The taskbar is hidden behind a full-screen program; looking would only take time from the game.
+            if (!App.FullScreen.IsActive())
+            {
+                int right = Measure();
+                if (Interlocked.Exchange(ref _right, right) != right) Changed?.Invoke();
+            }
         }
         catch (Exception exception) when (exception is ElementNotAvailableException or InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
@@ -51,6 +73,9 @@ internal sealed class TaskListWatcher : IDisposable
         finally
         {
             Monitor.Exit(_gate);
+            int room = Volatile.Read(ref _room);
+            try { _timer.Change(room > FarRoom ? FarInterval : NearInterval, Timeout.InfiniteTimeSpan); }
+            catch (ObjectDisposedException) { }
         }
     }
 

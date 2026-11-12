@@ -11,15 +11,18 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 > Everything else is implemented from public protocol documentation and needs testers.
 > If your device is listed below, please tell us whether it works.
 
-- **Colours**: white on a dark taskbar, black on a light one; yellow at 20% and below, red at 10% and below;
-  green with a bolt while charging. A sleeping device is faded and keeps its last known value; a dash means
-  the device does not report its charge.
+- **An iPhone-style battery.** A solid battery with the number cut out means fresh data: white on a dark taskbar,
+  black on a light one, yellow at 20% and below, red at 10% and below, green with a small bolt while charging.
+  A hollow outline means the device sleeps and shows its last known value; a dash means it does not report its charge.
 - **Click** the strip for the list of devices with their state. The gear opens the settings.
 - **Notifications** when a device drops to 20% and to 10%, once each.
 - **Follows the taskbar**: light or dark theme, Explorer restarts, sleep, a crowded taskbar (the icons go first,
   then the devices move to tray icons).
-- **Small and quiet**: one 300 KB file, about 25 MB of memory, close to zero CPU. No administrator rights,
+- **Small and quiet**: one 300 KB file, about 35 MB of memory, close to zero CPU. No administrator rights,
   no runtime to install, no ads, no telemetry. The only network access is an optional daily update check.
+- **Stays out of games.** While a full-screen game or video is in front, the app sends nothing to devices and leaves
+  the taskbar alone; it only listens to what devices send by themselves. It injects into no process, installs no
+  driver and hooks no input.
 - **Languages**: Russian and English, following Windows.
 
 ![The device list](docs/flyout.en.png)
@@ -46,7 +49,7 @@ downloads. Click *More info* → *Run anyway*. Each release page lists the SHA-2
 | **Logitech G435** on its own receiver (046D:0ACB) | Estimated from the battery voltage. Reading pauses the headset's audio for about a second, so it is **off until you agree**; then it happens at most every 30 minutes and only during silence. | ✔ |
 | **Logitech HID++** mice, keyboards and headsets on Unifying, Bolt, Lightspeed and by cable (G Pro, G305, G502 X, MX Master, G733, G535 and others) | Exact percent or a voltage estimate, depending on the device. Standard read requests, the same G HUB and Solaar send. | needs testers |
 | **Bluetooth** headphones, speakers, mice, keyboards (AirPods, Sony, JBL and others) | The value Windows shows in *Settings → Bluetooth*, read from Windows without touching the device. | needs testers |
-| **DualSense**, DualSense Edge, **DualShock 4**, by cable and Bluetooth | In 10% steps, with charging state, from the reports the controller sends anyway. | needs testers |
+| **DualSense**, DualSense Edge, **DualShock 4**, by cable and Bluetooth | In 10% steps, with charging state, from the reports the controller sends anyway. Over Bluetooth the charge shows once a game or Steam has switched the controller to full reports: the app never switches it itself, so games that read the controller directly keep working. | needs testers |
 | **Xbox** and compatible controllers | What Windows reports for the controller. | needs testers |
 
 Not supported yet: Razer, SteelSeries, HyperX, Corsair and other vendor-specific protocols.

@@ -28,21 +28,31 @@ public class PlayStationProtocolTests
     [InlineData(0x25, 100, false)] // full
     public void DualSense_over_usb(byte status, int percent, bool charging)
     {
-        Assert.Equal(new PadBattery(percent, charging), PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, status)));
+        Assert.Equal(new PadBattery(percent, charging), PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, status), bluetooth: false));
     }
 
     [Fact]
     public void DualSense_over_bluetooth_uses_the_full_report()
     {
-        Assert.Equal(new PadBattery(55, false), PlayStationProtocol.Parse(0x0CE6, Report(0x31, 78, 54, 0x05)));
-        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 10, 0, 0x01))); // the short report has no battery
+        Assert.Equal(new PadBattery(55, false), PlayStationProtocol.Parse(0x0CE6, Report(0x31, 78, 54, 0x05), bluetooth: true));
+        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 10, 0, 0x01), bluetooth: true)); // the short report has no battery
+    }
+
+    [Fact]
+    public void A_padded_bluetooth_short_report_is_not_read_as_an_empty_battery()
+    {
+        // Windows pads the short report 0x01 to the collection length: byte 53 is zero, which would read as 5 %.
+        Assert.True(PlayStationProtocol.IsBluetooth(78));
+        Assert.False(PlayStationProtocol.IsBluetooth(64));
+        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 78, 1, 0x80), bluetooth: true));
+        Assert.Null(PlayStationProtocol.Parse(0x05C4, Report(0x01, 547, 1, 0x80), bluetooth: true));
     }
 
     [Fact]
     public void DualSense_errors_give_no_value()
     {
-        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, 0xA5)));
-        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, 0xF0)));
+        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, 0xA5), bluetooth: false));
+        Assert.Null(PlayStationProtocol.Parse(0x0CE6, Report(0x01, 64, 53, 0xF0), bluetooth: false));
     }
 
     [Theory]
@@ -52,19 +62,19 @@ public class PlayStationProtocolTests
     [InlineData(0x1B, 100, false)] // cable, full
     public void DualShock4_over_usb(byte status, int percent, bool charging)
     {
-        Assert.Equal(new PadBattery(percent, charging), PlayStationProtocol.Parse(0x09CC, Report(0x01, 64, 30, status)));
+        Assert.Equal(new PadBattery(percent, charging), PlayStationProtocol.Parse(0x09CC, Report(0x01, 64, 30, status), bluetooth: false));
     }
 
     [Fact]
     public void DualShock4_over_bluetooth()
     {
-        Assert.Equal(new PadBattery(45, false), PlayStationProtocol.Parse(0x05C4, Report(0x11, 78, 32, 0x04)));
+        Assert.Equal(new PadBattery(45, false), PlayStationProtocol.Parse(0x05C4, Report(0x11, 78, 32, 0x04), bluetooth: true));
     }
 
     [Fact]
     public void Unknown_products_are_ignored()
     {
-        Assert.Null(PlayStationProtocol.Parse(0x1234, Report(0x01, 64, 53, 0x08)));
+        Assert.Null(PlayStationProtocol.Parse(0x1234, Report(0x01, 64, 53, 0x08), bluetooth: false));
     }
 }
 

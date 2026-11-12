@@ -6,7 +6,7 @@ BatteryStrip has no telemetry, no analytics, no crash reporting and no ads.
 a log of up to two 512 KB files, and the `--diagnose` report when you run it. Uninstalling removes all of it.
 
 **Network**: the app goes online only if you turn on *Check for updates*. Then, once a day, it asks
-`api.github.com` for this project's list of releases, and when you choose to install an update it downloads the new
+GitHub for this project's feed of releases (`github.com/<owner>/BatteryStrip/releases.atom`), and when you choose to install an update it downloads the new
 file from GitHub and checks its SHA-256. These requests carry the app's version in the User-Agent header and nothing
 about your computer or devices. GitHub sees your IP address, as with any visit to github.com.
 
@@ -26,8 +26,8 @@ report before attaching it to a public issue.
 **На компьютере** (`%LOCALAPPDATA%\BatteryStrip`) хранятся настройки, последние известные значения заряда, журнал
 (не больше двух файлов по 512 КБ) и отчёт `--diagnose`, если вы его запускали. При удалении программы всё это удаляется.
 
-**Интернет** — только если включить «Проверять обновления». Тогда раз в день программа спрашивает у `api.github.com`
-список версий этого проекта, а при установке обновления скачивает файл с GitHub и проверяет его контрольную сумму.
+**Интернет** — только если включить «Проверять обновления». Тогда раз в день программа запрашивает у GitHub
+ленту версий этого проекта (`releases.atom`), а при установке обновления скачивает файл с GitHub и проверяет его контрольную сумму.
 В запросах есть только версия программы; ничего о компьютере и устройствах не отправляется. GitHub видит ваш IP-адрес,
 как при любом заходе на github.com.
 

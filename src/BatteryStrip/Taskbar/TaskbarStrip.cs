@@ -48,6 +48,7 @@ internal sealed class TaskbarStrip : IDisposable
     private uint _hookedProcess;
     private Palette _palette = Theme.Current();
     private StripImage? _image;
+    private string? _shownKey;
     private IReadOnlyList<DeviceSnapshot> _devices = Array.Empty<DeviceSnapshot>();
     private DateTime? _brokenSince;
     private bool _reportedBroken;
@@ -233,14 +234,18 @@ internal sealed class TaskbarStrip : IDisposable
         {
             User32.ShowWindow(hwnd, User32.SW_HIDE);
             _image = null;
+            _shownKey = null;
+            _taskList.Room = int.MaxValue;
             MarkHealthy();
             return;
         }
 
         int right = place.TrayLeft - (int)Math.Round(TrayGap * place.Scale);
         int? appsRight = _taskList.Right == int.MinValue ? null : _taskList.Right - place.TaskbarRect.Left;
+        float fullWidth = _painter.Measure(_devices, place.Scale);
+        _taskList.Room = appsRight is int apps ? (int)((right - fullWidth - apps) / place.Scale) : int.MinValue;
         StripFit fit = StripLayout.Choose(right, appsRight, (int)Math.Round(AppGap * place.Scale),
-            _painter.Measure(_devices, place.Scale), _painter.Measure(_devices, place.Scale, compact: true));
+            fullWidth, _painter.Measure(_devices, place.Scale, compact: true));
         bool compact = fit == StripFit.Compact;
         if (fit == StripFit.None)
         {
@@ -252,22 +257,46 @@ internal sealed class TaskbarStrip : IDisposable
         }
         SetFits(true);
 
+        // A new reading with the same look (same percent, same state) needs no new picture, and most readings are such.
+        string key = VisualKey(_devices, _palette, place, compact);
+        if (key == _shownKey && _image != null && User32.IsWindowVisible(hwnd) && IsWhereExpected(place))
+        {
+            MarkHealthy();
+            return;
+        }
+
         StripImage image = _painter.Paint(_devices, _palette, place.Scale, place.Height, compact);
         int width = image.Surface.Width;
         int x = right - width;
 
         if (!LayeredBitmap.Show(hwnd, image.Surface))
         {
+            _shownKey = null;
             MarkBroken($"UpdateLayeredWindow failed ({Marshal.GetLastWin32Error()})");
             return;
         }
         if (!User32.SetWindowPos(hwnd, IntPtr.Zero, x, 0, width, place.Height, User32.SWP_NOACTIVATE | User32.SWP_SHOWWINDOW))
         {
+            _shownKey = null;
             MarkBroken($"SetWindowPos failed ({Marshal.GetLastWin32Error()})");
             return;
         }
         _image = image;
+        _shownKey = key;
         MarkHealthy();
+    }
+
+    /// <summary>Everything the strip's picture depends on; equal keys give equal pictures.</summary>
+    private static string VisualKey(IReadOnlyList<DeviceSnapshot> devices, Palette palette, TaskbarPlace place, bool compact)
+    {
+        var key = new System.Text.StringBuilder();
+        key.Append(palette.IsLight).Append('|').Append(place.Dpi).Append('|').Append(place.Height).Append('|').Append(place.TrayLeft).Append('|').Append(compact);
+        foreach (DeviceSnapshot d in devices)
+        {
+            key.Append('|').Append(d.Id).Append(':').Append(d.Kind).Append(':').Append(d.Percent).Append(':')
+                .Append(d.IsCharging).Append(':').Append(d.IsAsleep).Append(':').Append(d.Level);
+        }
+        return key.ToString();
     }
 
     /// <summary>Periodic self-check: still a child of the live taskbar, at the right place, with the right look.</summary>

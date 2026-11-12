@@ -57,11 +57,19 @@ internal sealed class HidInputPort : IDisposable
                 _pendingRead = _stream.ReadAsync(_pendingBuffer, 0, _reportLength);
             }
 
-            Task finished = await Task.WhenAny(_pendingRead, Task.Delay(timeout, cancellation)).ConfigureAwait(false);
-            if (finished != _pendingRead)
+            if (!_pendingRead.IsCompleted)
             {
-                cancellation.ThrowIfCancellationRequested();
-                return null;
+                // The timer is stopped as soon as the report arrives; left running, every read of a busy collection
+                // would keep a timer alive for the whole timeout.
+                using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                Task delay = Task.Delay(timeout, timer.Token);
+                Task finished = await Task.WhenAny(_pendingRead, delay).ConfigureAwait(false);
+                timer.Cancel();
+                if (finished != _pendingRead)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    return null;
+                }
             }
 
             Task<int> read = _pendingRead;

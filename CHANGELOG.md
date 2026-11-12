@@ -2,6 +2,26 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## 0.3.0-beta.3 — 2026-11-12
+
+- **A new, iPhone-style battery.** The number is cut out of a solid battery and no longer splits into two colours
+  where the fill ends ("47" used to read as a dark 4 and a white 7). "100" fits with room to spare. A sleeping
+  device is a hollow outline.
+- **A new charging bolt**: small and solid, next to the battery.
+- **The settings menu no longer hides behind the device list** and is dark in dark mode. A reading arriving while the
+  menu was open used to raise the list above it.
+- **A mouse on its cable no longer jumps between values** (30 → 95 → 35 → 100). On the cable it answers both by
+  cable and through its receiver, and the receiver repeats a stale value; while the cable answers, only it counts.
+- **Game mode.** While a full-screen game or video is in front, the app sends no requests to devices and does not
+  look at the taskbar.
+- **PlayStation controllers on Bluetooth** are no longer switched to full reports: that made games reading the
+  controller directly lose its input until it reconnected. A false "5%" read from the short report is fixed too.
+- **The update check** uses the GitHub releases feed, which has no 60-requests-an-hour limit per IP address (it failed
+  for people behind a VPN), and retries after 2 hours instead of a day.
+- **Lighter**: the handle count no longer creeps up for hours, the strip is not repainted when nothing visible
+  changed, the taskbar is checked less often when there is room, and the G435 audio state every 2 s instead of 1 s.
+- **Safer**: Windows DLLs load from System32 only.
+
 ## 0.3.0-beta.2 — 2026-11-11
 
 - **Report a device** under the gear: the app collects the device report itself and shows the file, ready to send

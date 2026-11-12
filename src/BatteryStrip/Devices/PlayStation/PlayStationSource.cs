@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,7 +50,8 @@ internal sealed class PadSession(DeviceStore store, DeviceDescriptor descriptor,
     private const int SampleReports = 8;
 
     private readonly WakeSignal _wake = new();
-    private bool _switchedToFullReports;
+    private readonly bool _bluetooth = PlayStationProtocol.IsBluetooth(pad.InputLength);
+    private bool _loggedShortMode;
 
     protected override string Name => descriptor.Name;
 
@@ -65,51 +65,43 @@ internal sealed class PadSession(DeviceStore store, DeviceDescriptor descriptor,
 
     protected override async Task RunAsync(CancellationToken cancellation)
     {
-        Log.Info($"{descriptor.Name} found ({descriptor.Id}).");
+        Log.Info($"{descriptor.Name} found ({descriptor.Id}, {(_bluetooth ? "Bluetooth" : "USB")}).");
         store.Connect(descriptor);
         while (!cancellation.IsCancellationRequested)
         {
-            PadBattery? battery = await SampleAsync(cancellation).ConfigureAwait(false);
+            (PadBattery? battery, bool heard) = await SampleAsync(cancellation).ConfigureAwait(false);
             if (battery is PadBattery b) store.Report(descriptor.Id, new DeviceReport.Charge(b.Percent, b.IsCharging));
+            else if (heard && _bluetooth) ReportShortMode();
             else store.Report(descriptor.Id, new DeviceReport.Asleep());
 
             await _wake.WaitAsync(ReadInterval, cancellation).ConfigureAwait(false);
         }
     }
 
-    private async Task<PadBattery?> SampleAsync(CancellationToken cancellation)
+    /// <summary>The controller talks, but in the Bluetooth short-report mode, which has no battery data.</summary>
+    private void ReportShortMode()
+    {
+        store.Report(descriptor.Id, new DeviceReport.Unsupported());
+        if (_loggedShortMode) return;
+        _loggedShortMode = true;
+        Log.Info($"{descriptor.Name}: Bluetooth short reports carry no battery; it shows once a game or Steam turns on full reports.");
+    }
+
+    /// <returns>The battery, if a report had it, and whether the controller sent anything at all.</returns>
+    private async Task<(PadBattery? Battery, bool Heard)> SampleAsync(CancellationToken cancellation)
     {
         using HidInputPort? input = HidInputPort.Open(pad);
-        if (input == null) return null;
+        if (input == null) return (null, false);
 
+        bool heard = false;
         DateTime until = DateTime.UtcNow + SampleTime;
         for (int i = 0; i < SampleReports && DateTime.UtcNow < until; i++)
         {
             byte[]? report = await input.ReadAsync(SampleTime, cancellation).ConfigureAwait(false);
             if (report == null) break;
-            if (PlayStationProtocol.Parse(pad.ProductId, report) is PadBattery battery) return battery;
+            heard = true;
+            if (PlayStationProtocol.Parse(pad.ProductId, report, _bluetooth) is PadBattery battery) return (battery, true);
         }
-
-        // Over Bluetooth (the only link with reports longer than 64 bytes) the controller may still be in its
-        // short-report mode, in which it reports nothing or only buttons. Ask once for the full reports.
-        if (pad.InputLength > 64 && !_switchedToFullReports) SwitchToFullReports();
-        return null;
-    }
-
-    /// <summary>A read of the calibration feature report; it changes nothing in the controller's settings.</summary>
-    private void SwitchToFullReports()
-    {
-        _switchedToFullReports = true;
-        try
-        {
-            using HidFeaturePort? feature = HidFeaturePort.Open(pad);
-            if (feature == null || pad.FeatureLength <= 0) return;
-            feature.Get(PlayStationProtocol.FullReportFeatureId(pad.ProductId), pad.FeatureLength);
-            Log.Info($"{descriptor.Name}: asked for full input reports over Bluetooth.");
-        }
-        catch (Win32Exception exception)
-        {
-            Log.Warn($"{descriptor.Name}: could not switch to full reports ({exception.Message}).");
-        }
+        return (null, heard);
     }
 }

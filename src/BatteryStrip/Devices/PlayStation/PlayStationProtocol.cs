@@ -15,23 +15,29 @@ internal static class PlayStationProtocol
 
     public static bool IsDualShock4(ushort productId) => productId is 0x05C4 or 0x09CC or 0x0BA0;
 
-    /// <summary>Over Bluetooth both controllers start with a short report without battery data; reading this
-    /// feature report (calibration data) switches them to the full report, as games and Steam do.</summary>
-    public static byte FullReportFeatureId(ushort productId) => IsDualSense(productId) ? (byte)0x05 : (byte)0x02;
+    /// <summary>
+    /// Over Bluetooth a controller starts in a short-report mode without battery data and switches to full reports
+    /// only when a game or Steam asks for them. Windows pads every report to the collection's longest one, so a
+    /// short report 0x01 arrives as long as a USB report full of zeros: over Bluetooth only full reports count.
+    /// This program never switches the mode itself, because games that use the plain DirectInput report would
+    /// stop receiving the controller's input until it reconnects.
+    /// </summary>
+    public static bool IsBluetooth(int inputReportLength) => inputReportLength > 64;
 
     /// <summary>Reads the battery from a full input report; null for short or unknown reports.</summary>
-    public static PadBattery? Parse(ushort productId, byte[] report)
+    /// <param name="bluetooth">The collection is a Bluetooth link (see <see cref="IsBluetooth"/>).</param>
+    public static PadBattery? Parse(ushort productId, byte[] report, bool bluetooth)
     {
         if (report.Length == 0) return null;
         if (IsDualSense(productId))
         {
-            if (report[0] == 0x01 && report.Length >= 64) return DualSense(report[53]);
-            if (report[0] == 0x31 && report.Length >= 78) return DualSense(report[54]);
+            if (!bluetooth && report[0] == 0x01 && report.Length >= 64) return DualSense(report[53]);
+            if (bluetooth && report[0] == 0x31 && report.Length >= 78) return DualSense(report[54]);
         }
         else if (IsDualShock4(productId))
         {
-            if (report[0] == 0x01 && report.Length >= 64) return DualShock4(report[30]);
-            if (report[0] == 0x11 && report.Length >= 78) return DualShock4(report[32]);
+            if (!bluetooth && report[0] == 0x01 && report.Length >= 64) return DualShock4(report[30]);
+            if (bluetooth && report[0] == 0x11 && report.Length >= 78) return DualShock4(report[32]);
         }
         return null;
     }

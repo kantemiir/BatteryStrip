@@ -51,12 +51,13 @@ internal sealed record AvailableUpdate(AppVersion Version, string ExeUrl, string
 
 /// <summary>
 /// Looks for a newer release on GitHub once a day, only when the user agreed. Sends one anonymous request
-/// for the list of releases; nothing about the computer or its devices leaves it.
+/// for the feed of releases; nothing about the computer or its devices leaves it.
 /// </summary>
 internal sealed class UpdateChecker : IDisposable
 {
     private static readonly TimeSpan FirstCheck = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan Interval = TimeSpan.FromDays(1);
+    private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromHours(2);
 
     private readonly Func<bool> _enabled;
     private readonly Timer _timer;
@@ -81,7 +82,7 @@ internal sealed class UpdateChecker : IDisposable
         if (!_enabled() || !AppInfo.HasRepository || AppVersion.Parse(AppInfo.Version) is not AppVersion current) return;
         try
         {
-            AvailableUpdate? update = Newest(DownloadText(AppInfo.ReleasesApi), current);
+            AvailableUpdate? update = Newest(DownloadText(AppInfo.ReleasesFeed), current, AppInfo.Repository);
             Volatile.Write(ref _available, update);
             if (update != null && !Equals(_announced, update.Version))
             {
@@ -92,36 +93,33 @@ internal sealed class UpdateChecker : IDisposable
         }
         catch (Exception exception) when (exception is WebException or IOException or FormatException)
         {
+            // No network right now (the computer just woke up, a VPN is connecting): try again later today.
             Log.Warn($"Update check failed: {exception.Message}");
+            try { _timer.Change(RetryAfterFailure, Interval); }
+            catch (ObjectDisposedException) { }
         }
     }
 
     /// <summary>
-    /// Picks the newest release above <paramref name="current"/> from the GitHub API answer. Pre-releases are
-    /// offered only to people already running one. Only the fields needed are read.
+    /// Picks the newest release above <paramref name="current"/> from the releases feed. Pre-releases are offered
+    /// only to people already running one; drafts never appear in the feed. The files of a release follow the names
+    /// the release workflow gives them, so their addresses are built from the tag rather than read from the feed.
     /// </summary>
-    internal static AvailableUpdate? Newest(string releasesJson, AppVersion current)
+    internal static AvailableUpdate? Newest(string releasesFeed, AppVersion current, string repository)
     {
         AvailableUpdate? best = null;
-        foreach (Match release in Regex.Matches(releasesJson, "\"tag_name\"\\s*:\\s*\"(?<tag>[^\"]+)\"(?<rest>.*?)(?=\"tag_name\"|$)", RegexOptions.Singleline))
+        string prefix = "https://github.com/" + repository + "/releases/tag/";
+        foreach (Match link in Regex.Matches(releasesFeed, "href=\"" + Regex.Escape(prefix) + "(?<tag>[0-9A-Za-z.\\-]+)\""))
         {
-            if (AppVersion.Parse(release.Groups["tag"].Value) is not AppVersion version) continue;
-            string rest = release.Groups["rest"].Value;
-            if (Regex.IsMatch(rest, "\"draft\"\\s*:\\s*true")) continue;
+            string tag = link.Groups["tag"].Value;
+            if (AppVersion.Parse(tag) is not AppVersion version) continue;
             if (version.IsPrerelease && !current.IsPrerelease) continue;
             if (version.CompareTo(current) <= 0 || (best != null && version.CompareTo(best.Version) <= 0)) continue;
 
-            string? exe = Asset(rest, @"BatteryStrip-[^""/]+\.exe");
-            string? checksum = Asset(rest, @"BatteryStrip-[^""/]+\.sha256\.txt");
-            if (exe != null && checksum != null) best = new AvailableUpdate(version, exe, checksum);
+            string files = $"https://github.com/{repository}/releases/download/{tag}/BatteryStrip-{version}";
+            best = new AvailableUpdate(version, files + ".exe", files + ".sha256.txt");
         }
         return best;
-    }
-
-    private static string? Asset(string json, string namePattern)
-    {
-        Match match = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"(?<url>https://github\\.com/[^\"]+/" + namePattern + ")\"");
-        return match.Success ? match.Groups["url"].Value : null;
     }
 
     /// <summary>
@@ -174,7 +172,6 @@ internal sealed class UpdateChecker : IDisposable
         ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
         var client = new WebClient { Encoding = System.Text.Encoding.UTF8 };
         client.Headers[HttpRequestHeader.UserAgent] = $"BatteryStrip/{AppInfo.Version}";
-        client.Headers[HttpRequestHeader.Accept] = "application/vnd.github+json";
         return client;
     }
 }

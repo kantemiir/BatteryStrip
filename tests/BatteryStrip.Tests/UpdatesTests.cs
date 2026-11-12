@@ -29,40 +29,52 @@ public class UpdatesTests
         Assert.Null(AppVersion.Parse(tag));
     }
 
+    // Shortened from https://github.com/<owner>/BatteryStrip/releases.atom.
     private const string Releases = """
-        [
-          { "tag_name": "v0.4.0-beta.1", "draft": false, "prerelease": true,
-            "assets": [ { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.4.0-beta.1/BatteryStrip-0.4.0-beta.1.exe" },
-                        { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.4.0-beta.1/BatteryStrip-0.4.0-beta.1.sha256.txt" } ] },
-          { "tag_name": "v0.3.1", "draft": false, "prerelease": false,
-            "assets": [ { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.3.1/BatteryStrip-0.3.1.exe" },
-                        { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.3.1/BatteryStrip-0.3.1.sha256.txt" } ] },
-          { "tag_name": "v0.5.0", "draft": true, "prerelease": false,
-            "assets": [ { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.5.0/BatteryStrip-0.5.0.exe" },
-                        { "browser_download_url": "https://github.com/o/BatteryStrip/releases/download/v0.5.0/BatteryStrip-0.5.0.sha256.txt" } ] },
-          { "tag_name": "v0.3.0", "draft": false, "prerelease": false, "assets": [] }
-        ]
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en-US">
+          <link type="text/html" rel="alternate" href="https://github.com/o/BatteryStrip/releases"/>
+          <entry>
+            <link rel="alternate" type="text/html" href="https://github.com/o/BatteryStrip/releases/tag/v0.4.0-beta.1"/>
+            <title>BatteryStrip 0.4.0-beta.1</title>
+          </entry>
+          <entry>
+            <link rel="alternate" type="text/html" href="https://github.com/o/BatteryStrip/releases/tag/v0.3.1"/>
+          </entry>
+          <entry>
+            <link rel="alternate" type="text/html" href="https://github.com/someone-else/BatteryStrip/releases/tag/v9.0.0"/>
+          </entry>
+          <entry>
+            <link rel="alternate" type="text/html" href="https://github.com/o/BatteryStrip/releases/tag/nightly"/>
+          </entry>
+          <entry>
+            <link rel="alternate" type="text/html" href="https://github.com/o/BatteryStrip/releases/tag/v0.3.0"/>
+          </entry>
+        </feed>
         """;
 
     [Fact]
     public void Stable_users_get_the_newest_stable_release()
     {
-        AvailableUpdate? update = UpdateChecker.Newest(Releases, V("0.3.0"));
+        AvailableUpdate? update = UpdateChecker.Newest(Releases, V("0.3.0"), "o/BatteryStrip");
         Assert.Equal("0.3.1", update!.Version.ToString());
-        Assert.EndsWith("/BatteryStrip-0.3.1.exe", update.ExeUrl);
-        Assert.EndsWith("/BatteryStrip-0.3.1.sha256.txt", update.ChecksumUrl);
+        Assert.Equal("https://github.com/o/BatteryStrip/releases/download/v0.3.1/BatteryStrip-0.3.1.exe", update.ExeUrl);
+        Assert.Equal("https://github.com/o/BatteryStrip/releases/download/v0.3.1/BatteryStrip-0.3.1.sha256.txt", update.ChecksumUrl);
     }
 
     [Fact]
-    public void Beta_users_also_get_betas_but_never_drafts()
+    public void Beta_users_also_get_betas()
     {
-        Assert.Equal("0.4.0-beta.1", UpdateChecker.Newest(Releases, V("0.3.0-beta.1"))!.Version.ToString());
+        AvailableUpdate? update = UpdateChecker.Newest(Releases, V("0.3.0-beta.1"), "o/BatteryStrip");
+        Assert.Equal("0.4.0-beta.1", update!.Version.ToString());
+        Assert.EndsWith("/v0.4.0-beta.1/BatteryStrip-0.4.0-beta.1.exe", update.ExeUrl);
     }
 
     [Fact]
-    public void Nothing_when_up_to_date_or_without_files()
+    public void Nothing_when_up_to_date_and_never_from_another_repository()
     {
-        Assert.Null(UpdateChecker.Newest(Releases, V("0.4.0")));
-        Assert.Null(UpdateChecker.Newest("""[ { "tag_name": "v9.0.0", "draft": false, "assets": [] } ]""", V("0.3.0")));
+        Assert.Null(UpdateChecker.Newest(Releases, V("0.4.0"), "o/BatteryStrip"));
+        Assert.Null(UpdateChecker.Newest(Releases, V("0.3.0"), "x/BatteryStrip"));
+        Assert.Null(UpdateChecker.Newest("<feed></feed>", V("0.3.0"), "o/BatteryStrip"));
     }
 }

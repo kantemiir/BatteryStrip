@@ -30,7 +30,11 @@ internal static class AppInfo
 
     public static bool HasRepository => Repository.Length > 0;
 
-    public static string ReleasesApi => $"https://api.github.com/repos/{Repository}/releases?per_page=10";
+    /// <summary>
+    /// The public feed of releases. Unlike the GitHub API, which allows 60 anonymous requests an hour per IP
+    /// address and so fails for everyone behind a busy VPN or NAT, the feed has no such limit.
+    /// </summary>
+    public static string ReleasesFeed => $"https://github.com/{Repository}/releases.atom";
 
     /// <summary>Settings, remembered charges and logs: %LOCALAPPDATA%\BatteryStrip.</summary>
     public static string DataDirectory { get; } =

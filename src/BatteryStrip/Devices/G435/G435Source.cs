@@ -66,7 +66,9 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     /// <summary>After waking from sleep the receiver needs a moment before it answers reliably.</summary>
     private static readonly TimeSpan SettleAfterResume = TimeSpan.FromSeconds(20);
 
-    private static readonly TimeSpan AudioPoll = TimeSpan.FromSeconds(1);
+    /// <summary>How often the audio state is sampled while waiting for silence. The gate needs 10–20 s of quiet,
+    /// so two seconds lose nothing and halve the work while music plays for hours.</summary>
+    private static readonly TimeSpan AudioPoll = TimeSpan.FromSeconds(2);
 
     /// <summary>Audio playing into a headset believed to be off for this long means it is probably on.</summary>
     private static readonly TimeSpan BusyMeansOn = TimeSpan.FromSeconds(20);
@@ -168,7 +170,8 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
 
             DateTime now = DateTime.UtcNow;
             AudioState? state = audio.Sample();
-            if (now >= _notBefore && gate.Observe(state, now)) return false;
+            bool quiet = gate.Observe(state, now);
+            if (quiet && now >= _notBefore && !FullScreen.IsActive()) return false;
 
             // While it cannot be asked, a headset that is being played to is shown with its last known charge.
             bool busy = state is not AudioState s || s.HasOpenStreams;

@@ -25,11 +25,28 @@ internal sealed class StripPainter(GlyphCache glyphs)
     // A sleeping device is faded like a disabled icon in Windows. Its number is not cut out of the fill:
     // a faded fill with holes reads as dark digits on grey, so the number is drawn on top instead.
     private const double AsleepIcon = 0.45, AsleepOutline = 0.5, AsleepFill = 0.22, AsleepNumber = 0.7;
-    private const float BoltGap = 1, BoltFont = 13;
+
+    /// <summary>
+    /// Opacity of the battery's empty part. The number is cut out of the whole battery, so it reads in one colour
+    /// against both the fill and the empty part; the empty part has to be dense enough for the cut-out to show.
+    /// </summary>
+    private const double BodyOpacityDark = 0.5, BodyOpacityLight = 0.56;
+
+    /// <summary>Charging bolt: small and solid, beside the battery, like the iPhone's with the percentage shown.</summary>
+    private const float BoltGap = 2, BoltHeight = 10;
+
     private const float DeviceGap = 14, CompactGap = 8;
 
-    private const string Bolt = "\uE945";
     private const string Dash = "\u2013";
+
+    /// <summary>The bolt outline on a 10 × 16 grid: a classic lightning shape with a sharp lower tip.</summary>
+    private static readonly (float X, float Y)[] BoltShape =
+    [
+        (6.4f, 0f), (0.6f, 9.2f), (4.6f, 9.2f), (3.6f, 16f), (9.4f, 6.6f), (5.4f, 6.6f),
+    ];
+
+    private readonly System.Collections.Generic.Dictionary<float, GlyphMask> _bolts = new();
+
 
     public static string IconOf(DeviceKind kind) => kind switch
     {
@@ -85,7 +102,7 @@ internal sealed class StripPainter(GlyphCache glyphs)
     public float BatteryWidth(DeviceSnapshot device, float scale)
     {
         float width = (BodyWidth + NubGap + NubWidth) * scale;
-        if (device.IsCharging && device.Percent != null) width += BoltGap * scale + glyphs.Get(GlyphFont.Icons, Px(BoltFont, scale), Bolt, lightText: true).Width;
+        if (device.IsCharging && device.Percent != null) width += BoltGap * scale + BoltMask(scale).Width;
         return (float)Math.Ceiling(width);
     }
 
@@ -101,21 +118,24 @@ internal sealed class StripPainter(GlyphCache glyphs)
     public void PaintBattery(Surface surface, DeviceSnapshot device, Palette palette, float scale, float left, float middle)
     {
         bool asleep = device.IsAsleep;
+        // A solid battery (as on the iPhone) means fresh data; a sleeping device or one without data is a hollow outline.
+        bool solid = !asleep && device.Percent != null;
         Rgba outline = asleep ? palette.Outline.WithOpacity(AsleepOutline) : palette.Outline;
+        Rgba body = palette.Text.WithOpacity(palette.IsLight ? BodyOpacityLight : BodyOpacityDark);
 
         // Battery body, on whole pixels so the 1 px outline stays sharp.
         float bodyLeft = (float)Math.Round(left);
         float bodyTop = (float)Math.Round(middle - BodyHeight * scale / 2);
-        var body = new RectF(bodyLeft, bodyTop, (float)Math.Round(BodyWidth * scale), (float)Math.Round(BodyHeight * scale));
+        var shell = new RectF(bodyLeft, bodyTop, (float)Math.Round(BodyWidth * scale), (float)Math.Round(BodyHeight * scale));
         float line = Math.Max(1, (float)Math.Round(scale));
-        surface.StrokeRoundedRect(body, BodyRadius * scale, line, outline);
+        if (!solid) surface.StrokeRoundedRect(shell, BodyRadius * scale, line, outline);
 
         float nubHeight = (float)Math.Round(NubHeight * scale);
-        var nub = new RectF(body.Right + (float)Math.Round(NubGap * scale), (float)Math.Round(middle - nubHeight / 2),
+        var nub = new RectF(shell.Right + (float)Math.Round(NubGap * scale), (float)Math.Round(middle - nubHeight / 2),
             Math.Max(1, (float)Math.Round(NubWidth * scale)), nubHeight);
-        surface.FillRoundedRect(new RectF(nub.X - nub.Width, nub.Y, nub.Width * 2, nub.Height), nub.Width, outline, clip: nub);
+        surface.FillRoundedRect(new RectF(nub.X - nub.Width, nub.Y, nub.Width * 2, nub.Height), nub.Width, solid ? body : outline, clip: nub);
 
-        RectF inner = body.Inset(line);
+        RectF inner = shell.Inset(line);
         if (device.Percent is not int percent)
         {
             GlyphMask dash = glyphs.Get(GlyphFont.NumberSemibold, Px(NumberFont, scale), Dash, !palette.IsLight);
@@ -123,29 +143,53 @@ internal sealed class StripPainter(GlyphCache glyphs)
             return;
         }
 
-        GlyphMask number = glyphs.Get(GlyphFont.NumberSemibold, Px(NumberFont, scale), percent.ToString(), !palette.IsLight);
+        GlyphMask number = Number(percent, palette, scale, inner.Width);
         int numberX = Centre(inner.X, inner.Width, number.Width), numberY = Centre(inner.Y, inner.Height, number.Height);
-        RectF track = body.Inset(FillInset * scale);
+        RectF track = solid ? shell : shell.Inset(FillInset * scale);
+        float radius = solid ? BodyRadius * scale : FillRadius * scale;
         float fillWidth = (float)Math.Round(track.Width * percent / 100f);
         var fill = new RectF(track.X, track.Y, fillWidth, track.Height);
+        var empty = new RectF(track.X + fillWidth, track.Y, track.Width - fillWidth, track.Height);
 
         if (asleep)
         {
-            if (fillWidth > 0) surface.FillRoundedRect(fill, FillRadius * scale, FillColour(device, palette).WithOpacity(AsleepFill));
+            if (fillWidth > 0) surface.FillRoundedRect(track, radius, FillColour(device, palette).WithOpacity(AsleepFill), clip: fill);
             surface.DrawMask(number, numberX, numberY, palette.Text.WithOpacity(AsleepNumber));
             return;
         }
 
-        // The number: plain where the battery is empty, cut out of the fill where it is full.
-        surface.DrawMask(number, numberX, numberY, palette.Text);
+        // The number is cut out of both parts, so it never splits into two colours where the fill ends.
+        if (empty.Width > 0) surface.FillRoundedRect(track, radius, body, clip: empty, hole: number, holeX: numberX, holeY: numberY);
         if (fillWidth > 0)
-            surface.FillRoundedRect(fill, FillRadius * scale, FillColour(device, palette), clip: null, hole: number, holeX: numberX, holeY: numberY);
+            surface.FillRoundedRect(track, radius, FillColour(device, palette), clip: fill, hole: number, holeX: numberX, holeY: numberY);
 
         if (device.IsCharging)
         {
-            GlyphMask bolt = glyphs.Get(GlyphFont.Icons, Px(BoltFont, scale), Bolt, !palette.IsLight);
-            surface.DrawMask(bolt, (int)Math.Round(nub.Right + BoltGap * scale), (int)Math.Round(middle - bolt.Height / 2f), palette.Charging);
+            GlyphMask bolt = BoltMask(scale);
+            surface.DrawMask(bolt, (int)Math.Round(nub.Right + BoltGap * scale), (int)Math.Round(middle - bolt.Height / 2f), palette.Text);
         }
+    }
+
+    /// <summary>The number inside a battery; "100" is set a little smaller so it keeps clear of the edges.</summary>
+    private GlyphMask Number(int percent, Palette palette, float scale, float room)
+    {
+        GlyphMask number = glyphs.Get(GlyphFont.NumberSemibold, Px(NumberFont, scale), percent.ToString(), !palette.IsLight);
+        if (number.Width <= room - 4 * scale) return number;
+        return glyphs.Get(GlyphFont.NumberSemibold, Px(NumberFont - 1.5f, scale), percent.ToString(), !palette.IsLight);
+    }
+
+    private GlyphMask BoltMask(float scale)
+    {
+        float height = (float)Math.Round(BoltHeight * scale);
+        if (!_bolts.TryGetValue(height, out GlyphMask? mask))
+        {
+            float unit = height / 16f;
+            var points = new (float X, float Y)[BoltShape.Length];
+            for (int i = 0; i < points.Length; i++) points[i] = (BoltShape[i].X * unit, BoltShape[i].Y * unit);
+            mask = Surface.PolygonMask(points);
+            _bolts[height] = mask;
+        }
+        return mask;
     }
 
     private static Rgba FillColour(DeviceSnapshot device, Palette palette) =>

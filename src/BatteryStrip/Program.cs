@@ -4,6 +4,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using BatteryStrip.App;
 
+// Windows DLLs that P/Invoke loads (hid.dll, setupapi.dll and others) come from System32 only, never from the
+// folder of the exe: the installer often runs from Downloads, where another file could be planted next to it.
+[assembly: System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+
 namespace BatteryStrip;
 
 internal static class Program
@@ -11,6 +15,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // The same for DLLs that Windows itself loads later on behalf of the program.
+        SetDefaultDllDirectories(LoadLibrarySearchSystem32);
         Log.Start(AppInfo.LogDirectory);
         try
         {
@@ -81,6 +87,11 @@ internal static class Program
         host.Run();
         return 0;
     }
+
+    private const int LoadLibrarySearchSystem32 = 0x800;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool SetDefaultDllDirectories(int flags);
 
     /// <summary>Asks a running copy to exit, for example before an update or uninstall.</summary>
     private static int SignalExit()

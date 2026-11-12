@@ -25,6 +25,17 @@ internal sealed class AppHost : IDisposable
     private readonly TaskbarStrip _strip;
     private readonly TrayIcons _tray;
     private readonly Timer _saveTimer;
+
+    /// <summary>
+    /// The thread pool starts a thread for a timer or a device reply and retires it after a short idle time. A
+    /// retired thread keeps its handle and a few events until the garbage collector finalizes its Thread object,
+    /// and this program allocates so little that a collection may not come for hours: the handle count of the
+    /// process would creep up all day. A background collection every few minutes releases them; on a heap
+    /// this small it takes well under a millisecond and does not stop the strip.
+    /// </summary>
+    private readonly Timer _housekeeping = new(_ => GC.Collect(2, GCCollectionMode.Forced, blocking: false), null, HousekeepingInterval, HousekeepingInterval);
+
+    private static readonly TimeSpan HousekeepingInterval = TimeSpan.FromMinutes(10);
     private readonly EventWaitHandle _exitEvent;
     private readonly RegisteredWaitHandle _exitWait;
     private readonly int _mainThreadId = GetCurrentThreadId();
@@ -126,6 +137,7 @@ internal sealed class AppHost : IDisposable
         _strip.Dispose();
         _devices.Dispose();
         _saveTimer.Dispose();
+        _housekeeping.Dispose();
         Save();
     }
 
@@ -225,6 +237,7 @@ internal sealed class AppHost : IDisposable
 
             // A menu needs a foreground owner to close when the user clicks elsewhere.
             IntPtr owner = _strip.MenuOwner;
+            Rendering.MenuTheme.Apply(dark: !Rendering.Theme.Current().IsLight);
             User32.SetForegroundWindow(owner);
             int choice = TrackPopupMenuEx(menu, 0x0100 /* TPM_RETURNCMD */ | 0x0020 /* TPM_BOTTOMALIGN */, x, y, owner, IntPtr.Zero);
             User32.PostMessage(owner, 0, IntPtr.Zero, IntPtr.Zero);
