@@ -2,6 +2,8 @@
 
 **[Русский](README.ru.md)** · English
 
+Current version: **0.3.0-beta.6** · [What's new](CHANGELOG.md) · [Releases](../../releases)
+
 A tiny strip on the Windows 11 taskbar, right next to the clock, that shows the charge of your wireless devices:
 mouse, headset, controller, keyboard. It finds them by itself and shows as many as are connected.
 
@@ -20,7 +22,7 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 - **Notifications** when a device drops to 20% and to 10%, once each.
 - **Follows the taskbar**: light or dark theme, Explorer restarts, sleep, a crowded taskbar (the icons go first,
   then the devices move to tray icons).
-- **Small and quiet**: one file of about 500 KB, about 35 MB of memory, close to zero CPU. No administrator rights,
+- **Small and quiet**: one file of about 500 KB, about 60 MB of memory (as Task Manager shows it), close to zero CPU. No administrator rights,
   no runtime to install, no ads, no telemetry. The only network access is an optional daily update check.
 - **Stays out of games.** While a full-screen game or video is in front, the app sends nothing to devices and leaves
   the taskbar alone; it only listens to what devices send by themselves. It injects into no process, installs no
@@ -78,7 +80,7 @@ The same from a command prompt: `"%LOCALAPPDATA%\Programs\BatteryStrip\BatterySt
 ## Settings
 
 The gear in the device list: start with Windows, low battery warnings, G435 reading, update check, refresh now,
-log, exit. A few more options live in `%LOCALAPPDATA%\BatteryStrip\settings.txt`:
+report a device, open the log, exit. A few more options live in `%LOCALAPPDATA%\BatteryStrip\settings.txt`:
 
 ```
 # ru, en, or empty to follow Windows
@@ -95,6 +97,12 @@ attach, tray icons stand in. The window's thread only draws: device work happens
 window shares its input queue with Explorer.
 
 Design notes: [docs/design.md](docs/design.md). Device protocols: [research/devices.md](research/devices.md).
+
+## If something goes wrong
+
+- **The strip disappeared.** After Explorer restarts or the PC wakes from sleep, it comes back by itself within a few
+  seconds. If Windows does not let it attach to the taskbar, after 20 seconds the devices appear as tray icons instead.
+- **The log**: gear → *Open log*, or the file `%LOCALAPPDATA%\BatteryStrip\logs\app.log`.
 
 ## Building
 
