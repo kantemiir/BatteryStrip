@@ -13,10 +13,10 @@
   G PRO headsets use their own voltage curves, so their estimate is closer to what G HUB shows.
 - **HeadsetControl**: if you installed it yourself, the app runs it every 5 minutes and shows the headsets it knows.
 - **Credits** for Wireless Battery in the README and THIRD-PARTY-NOTICES.
-- **Easier-to-read numbers.** The outlined battery is replaced by a soft rounded plate with a larger, bold number
-  (14 px). The charge is a lighter part of the plate, and the number stays one colour all the way across, so a digit
-  no longer splits in two where the fill ends ("45" had turned into a dark 4 and a white 5). Warning colours, the bolt
-  and the sleeping look are as before.
+- **Easier-to-read numbers.** The number in the battery is larger and bold (14 px) and stays one colour all the way
+  across. The fill is now a lighter tone of the text colour instead of solid white with the number cut out of it, so
+  a digit no longer splits in two where the fill ends ("45" had turned into a dark 4 and a white 5). The battery is a
+  little bigger (34 × 18 px instead of 30 × 15). Warning colours, the bolt and the sleeping look are as before.
 
 ## 0.3.0-beta.5 — 2026-11-17
 

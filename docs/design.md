@@ -28,12 +28,13 @@ Windows 10 the legacy `MSTaskSwWClass` window gives it directly.
 A small software canvas (`Surface`) in premultiplied BGRA. Shapes are antialiased analytically; glyphs come from
 DirectWrite through a Direct2D DC render target as coverage masks (grayscale antialiasing, as on the taskbar).
 
-The number sits on a soft rounded plate with no outline (chosen by the user on 2026-11-17, after the digits of the
-outlined battery proved hard to read: a digit the edge of the cut-out fill crossed split into a dark and a white half).
-The plate is the text colour at about 10 % opacity; the charge is the same plate again at 24 % up to a whole-pixel edge,
-and the 14 px bold number is drawn over both in one solid colour, so no digit is ever split. Warning fills use Windows 11's
+The battery is outlined the way Windows draws its own, 34 × 18 px with a nub (chosen by the user on 2026-11-17, variant
+"Б", after the digits of the first outlined battery proved hard to read: a digit the edge of the cut-out fill crossed
+split into a dark and a white half). The outline is the text colour at 80–90 %; the charge is the text colour at 30 %,
+inset by a hairline gap and ending on a whole pixel,
+and the 14 px bold number is drawn over it in one solid colour, so no digit is ever split. Warning fills use Windows 11's
 caution and critical colours at full strength; they end at 20 %, before the digits (a test guards this).
-A sleeping device is a bare plate with a dim number; a device without data shows a dash. The charging bolt is a small vector shape beside the plate (8×8 supersampled),
+A sleeping device is a dim outline and number without fill; a device without data shows a dash. The charging bolt is a small vector shape beside the battery (8×8 supersampled),
 not a font glyph. Fonts: Segoe UI Variable and Segoe Fluent Icons. The flyout runs on its own thread and uses the
 same painter; the strip repaints only when something visible changed. Pop-up menus follow the taskbar's light or
 dark mode through uxtheme's `SetPreferredAppMode`.

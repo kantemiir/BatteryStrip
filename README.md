@@ -11,11 +11,11 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 > Everything else is implemented from public protocol documentation and needs testers.
 > If your device is listed below, please tell us whether it works.
 
-- **A bold number on a soft plate.** Each device has its icon and a rounded plate with the charge on it. The charge also
-  shows as a lighter part of the plate, but the number keeps one colour all the way across, so it never splits where
-  the fill ends. The fill turns yellow at 20% and below and red at 10% and below (Windows' own warning colours), and a
-  small bolt shows charging. A bare plate with a dim number means the device sleeps and shows its last known value; a
-  dash means it does not report its charge.
+- **A battery in the Windows style.** A thin outline, like the battery icon in the Windows tray, with a bold number
+  inside. The charge is a lighter tone of the taskbar's text colour, and the number keeps one colour all the way
+  across, so it never splits where the fill ends. The fill turns yellow at 20% and below and red at 10% and below
+  (Windows' own warning colours), and a small bolt shows charging. A dim battery without fill means the device sleeps
+  and shows its last known value; a dash means it does not report its charge.
 - **Click** the strip for the list of devices with their state. The gear opens the settings.
 - **Notifications** when a device drops to 20% and to 10%, once each.
 - **Follows the taskbar**: light or dark theme, Explorer restarts, sleep, a crowded taskbar (the icons go first,
