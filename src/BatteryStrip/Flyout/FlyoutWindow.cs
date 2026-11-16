@@ -34,6 +34,7 @@ internal sealed class FlyoutWindow : NativeWindow
 {
     private const int WM_APP_TOGGLE = User32.WM_APP + 20;
     private const int WM_APP_DEVICES = User32.WM_APP + 21;
+    private const int WM_APP_SHOW = User32.WM_APP + 22;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int VK_ESCAPE = 0x1B;
     private const int WA_INACTIVE = 0;
@@ -105,10 +106,22 @@ internal sealed class FlyoutWindow : NativeWindow
         User32.PostMessage(Handle, WM_APP_TOGGLE, IntPtr.Zero, IntPtr.Zero);
     }
 
+    /// <summary>Opens the flyout above <paramref name="anchor"/>, or brings it forward if it is open. Any thread.</summary>
+    public void Show(User32.RECT anchor)
+    {
+        lock (_anchorGate) _anchor = anchor;
+        User32.PostMessage(Handle, WM_APP_SHOW, IntPtr.Zero, IntPtr.Zero);
+    }
+
     protected override IntPtr? OnMessage(int message, IntPtr wParam, IntPtr lParam)
     {
         switch (message)
         {
+            case WM_APP_SHOW:
+                if (User32.IsWindowVisible(Handle)) User32.SetForegroundWindow(Handle);
+                else Open();
+                return IntPtr.Zero;
+
             case WM_APP_TOGGLE:
                 if (User32.IsWindowVisible(Handle)) Hide();
                 else if (DateTime.UtcNow - _hiddenAt > ReopenGuard) Open();
@@ -128,6 +141,10 @@ internal sealed class FlyoutWindow : NativeWindow
 
             case User32.WM_KEYDOWN:
                 if ((int)wParam == VK_ESCAPE) Hide();
+                return IntPtr.Zero;
+
+            case User32.WM_CLOSE:
+                Hide();
                 return IntPtr.Zero;
 
             case User32.WM_MOUSEMOVE:
@@ -183,11 +200,19 @@ internal sealed class FlyoutWindow : NativeWindow
         int dark = palette.IsLight ? 0 : 1;
         DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
 
+        // A hairline edge like other Windows 11 flyouts, drawn by DWM along the rounded corners; without it a dark
+        // flyout has no edge against a dark wallpaper.
+        int border = palette.IsLight ? 0x00E5E5E5 : 0x00434343;
+        DwmSetWindowAttribute(Handle, DWMWA_BORDER_COLOR, ref border, sizeof(int));
+
         // Above the strip, right edges aligned, kept inside the screen's work area.
         int width = _image.Surface.Width, height = _image.Surface.Height;
         int gap = (int)Math.Round(GapAboveTaskbar * _scale);
         int x = Math.Max(info.rcWork.Left + gap, Math.Min(anchor.Right - width + gap, info.rcWork.Right - width - gap));
-        int y = info.rcWork.Bottom - height - gap;
+        // Above the strip itself when there is one: with an auto-hidden taskbar the work area reaches the screen
+        // edge, and the flyout would cover the taskbar it opened from. A cursor anchor (tray icons) has no height.
+        int bottom = anchor.Bottom > anchor.Top ? Math.Min(info.rcWork.Bottom, anchor.Top) : info.rcWork.Bottom;
+        int y = Math.Max(info.rcWork.Top + gap, bottom - height - gap);
 
         bool wasVisible = User32.IsWindowVisible(Handle);
         if (wasVisible)
@@ -201,6 +226,7 @@ internal sealed class FlyoutWindow : NativeWindow
 
         User32.SetWindowPos(Handle, new IntPtr(-1) /* HWND_TOPMOST */, x, y, width, height, User32.SWP_SHOWWINDOW);
         InvalidateRect(Handle, IntPtr.Zero, false);
+        UpdateWindow(Handle); // paint now, so the first frame on screen is not an empty window
         User32.SetForegroundWindow(Handle);
         User32.SetTimer(Handle, RefreshTimer, 30_000, IntPtr.Zero);
     }
@@ -287,15 +313,16 @@ internal sealed class FlyoutWindow : NativeWindow
             AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
             AppendMenu(menu, 0, new IntPtr(Exit), Text.Current.MenuExit);
 
+            // Opens up and to the left from the gear's top-right corner, so it never covers the gear itself.
             if (_image == null || !User32.GetWindowRect(Handle, out User32.RECT window)) return;
-            int x = window.Left + (int)_image.Gear.X, y = window.Top + (int)_image.Gear.Bottom;
+            int x = window.Left + (int)Math.Round(_image.Gear.Right), y = window.Top + (int)Math.Round(_image.Gear.Y);
             MenuTheme.Apply(dark: !Theme.Current().IsLight);
 
             _menuOpen = true;
             int choice;
             try
             {
-                choice = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, Handle, IntPtr.Zero);
+                choice = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_RIGHTALIGN | TPM_BOTTOMALIGN, x, y, Handle, IntPtr.Zero);
             }
             finally
             {
@@ -348,7 +375,8 @@ internal sealed class FlyoutWindow : NativeWindow
     }
 
     private const int CS_DROPSHADOW = 0x00020000;
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWA_BORDER_COLOR = 34, DWMWCP_ROUND = 2;
+    private const int TPM_RIGHTALIGN = 0x0008, TPM_BOTTOMALIGN = 0x0020;
     private const int MF_CHECKED = 0x8, MF_SEPARATOR = 0x800;
     private const int TPM_RETURNCMD = 0x0100, TPM_RIGHTBUTTON = 0x0002;
 
@@ -399,6 +427,9 @@ internal sealed class FlyoutWindow : NativeWindow
 
     [DllImport("user32.dll")]
     private static extern bool InvalidateRect(IntPtr hwnd, IntPtr rect, bool erase);
+
+    [DllImport("user32.dll")]
+    private static extern bool UpdateWindow(IntPtr hwnd);
 
     [DllImport("gdi32.dll")]
     private static extern int SetDIBitsToDevice(IntPtr dc, int x, int y, int width, int height, int sourceX, int sourceY,

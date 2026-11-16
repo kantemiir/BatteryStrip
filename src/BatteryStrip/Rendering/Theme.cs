@@ -20,10 +20,11 @@ internal sealed record Palette(
         IsLight: false,
         Text: Rgba.FromHex(0xFFFFFF),
         SecondaryText: Rgba.FromHex(0xC9D1D9),
-        Dimmed: Rgba.FromHex(0x5F6B76),
+        Dimmed: Rgba.FromHex(0x8A9099),
         Outline: Rgba.FromHex(0xFFFFFF, 0.6),
-        Low: Rgba.FromHex(0xEF9F27),
-        Critical: Rgba.FromHex(0xE24B4A),
+        // Windows 11's own caution and critical colours for a dark surface.
+        Low: Rgba.FromHex(0xFCE100),
+        Critical: Rgba.FromHex(0xFF99A4),
         Charging: Rgba.FromHex(0x97C459),
         Divider: Rgba.FromHex(0xFFFFFF, 0.08),
         Background: Rgba.FromHex(0x2C2C2C));
@@ -32,11 +33,13 @@ internal sealed record Palette(
         IsLight: true,
         Text: Rgba.FromHex(0x1A1A1A),
         SecondaryText: Rgba.FromHex(0x444441),
-        Dimmed: Rgba.FromHex(0xA8ADB2),
+        Dimmed: Rgba.FromHex(0x767676),
         Outline: Rgba.FromHex(0x1A1A1A, 0.55),
-        Low: Rgba.FromHex(0xBA7517),
-        Critical: Rgba.FromHex(0xE24B4A),
-        Charging: Rgba.FromHex(0x639922),
+        // Windows 11's caution and critical colours for a light surface; the cut-out number shows the light taskbar
+        // through the fill, and these keep it at 4.5:1 or better against #F3F3F3.
+        Low: Rgba.FromHex(0x9D5D00),
+        Critical: Rgba.FromHex(0xC42B1C),
+        Charging: Rgba.FromHex(0x467318),
         Divider: Rgba.FromHex(0x000000, 0.08),
         Background: Rgba.FromHex(0xF9F9F9));
 }

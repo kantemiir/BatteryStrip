@@ -43,7 +43,11 @@ internal sealed class DeviceStore(Func<DateTime> utcNow)
     private readonly Dictionary<string, RememberedCharge> _remembered = new(StringComparer.Ordinal);
     private IReadOnlyList<DeviceSnapshot> _snapshot = Array.Empty<DeviceSnapshot>();
 
-    /// <summary>Raised after the visible list changed. May come from any thread.</summary>
+    /// <summary>
+    /// Raised after the visible list changed. A reading that only moves the "updated" time (most readings: same
+    /// percent, same state) does not count: the snapshot still gets the new time, but nobody is woken for it.
+    /// May come from any thread.
+    /// </summary>
     public event Action? Changed;
 
     /// <summary>Raised when a device falls to a warning threshold (20 or 10). May come from any thread.</summary>
@@ -182,9 +186,20 @@ internal sealed class DeviceStore(Func<DateTime> utcNow)
                 .ThenBy(s => s.Name, StringComparer.CurrentCulture)
                 .ThenBy(s => s.Id, StringComparer.Ordinal)
                 .ToArray();
-            changed = !next.SequenceEqual(_snapshot);
-            if (changed) _snapshot = next;
+            changed = !next.SequenceEqual(_snapshot, VisibleComparer.Instance);
+            if (changed || !next.SequenceEqual(_snapshot)) _snapshot = next;
         }
         if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>Compares snapshots without their reading time.</summary>
+    private sealed class VisibleComparer : IEqualityComparer<DeviceSnapshot>
+    {
+        public static readonly VisibleComparer Instance = new();
+
+        public bool Equals(DeviceSnapshot? a, DeviceSnapshot? b) =>
+            ReferenceEquals(a, b) || a != null && b != null && a with { UpdatedUtc = null } == b with { UpdatedUtc = null };
+
+        public int GetHashCode(DeviceSnapshot snapshot) => (snapshot with { UpdatedUtc = null }).GetHashCode();
     }
 }

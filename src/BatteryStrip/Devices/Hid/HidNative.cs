@@ -103,6 +103,24 @@ internal static class HidNative
     [return: MarshalAs(UnmanagedType.U1)]
     public static extern bool HidD_GetFeature(SafeFileHandle device, byte[] report, int length);
 
+    [DllImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    public static extern bool HidD_GetInputReport(SafeFileHandle device, byte[] report, int length);
+
+    /// <summary>HidP report types.</summary>
+    public const int HidpInput = 0, HidpOutput = 1, HidpFeature = 2;
+
+    /// <summary>Size of one HIDP_VALUE_CAPS entry.</summary>
+    public const int ValueCapsSize = 72;
+
+    /// <summary>Fills <paramref name="caps"/> with HIDP_VALUE_CAPS entries (see <see cref="ValueCapsSize"/>); <paramref name="count"/> is in and out.</summary>
+    [DllImport("hid.dll")]
+    public static extern int HidP_GetValueCaps(int reportType, byte[] caps, ref ushort count, IntPtr preparsedData);
+
+    [DllImport("hid.dll")]
+    public static extern int HidP_GetUsageValue(int reportType, ushort usagePage, ushort linkCollection, ushort usage, out uint value,
+        IntPtr preparsedData, byte[] report, int reportLength);
+
     [DllImport("setupapi.dll", SetLastError = true)]
     public static extern IntPtr SetupDiGetClassDevs(ref Guid classGuid, IntPtr enumerator, IntPtr parent, int flags);
 

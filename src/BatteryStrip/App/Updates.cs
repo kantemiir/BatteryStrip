@@ -18,8 +18,9 @@ internal readonly record struct AppVersion(Version Number, string? Prerelease) :
         if (string.IsNullOrWhiteSpace(text)) return null;
         Match match = Regex.Match(text!.Trim(), @"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.\-]+))?(?:\+.*)?$");
         if (!match.Success) return null;
-        var number = new Version(int.Parse(match.Groups[1].Value), int.Parse(match.Groups[2].Value), int.Parse(match.Groups[3].Value));
-        return new AppVersion(number, match.Groups[4].Success ? match.Groups[4].Value : null);
+        if (!int.TryParse(match.Groups[1].Value, out int major) || !int.TryParse(match.Groups[2].Value, out int minor)
+            || !int.TryParse(match.Groups[3].Value, out int patch)) return null; // a number too large for a version
+        return new AppVersion(new Version(major, minor, patch), match.Groups[4].Success ? match.Groups[4].Value : null);
     }
 
     public bool IsPrerelease => Prerelease != null;
@@ -75,6 +76,13 @@ internal sealed class UpdateChecker : IDisposable
 
     public AvailableUpdate? Available => Volatile.Read(ref _available);
 
+    /// <summary>Checks within a minute, for example right after the user turned update checks on.</summary>
+    public void CheckSoon()
+    {
+        try { _timer.Change(FirstCheck, Interval); }
+        catch (ObjectDisposedException) { }
+    }
+
     public void Dispose() => _timer.Dispose();
 
     private void Check()
@@ -91,9 +99,10 @@ internal sealed class UpdateChecker : IDisposable
                 Found?.Invoke(update);
             }
         }
-        catch (Exception exception) when (exception is WebException or IOException or FormatException)
+        catch (Exception exception)
         {
-            // No network right now (the computer just woke up, a VPN is connecting): try again later today.
+            // No network right now (the computer just woke up, a VPN is connecting), or an odd answer: try again
+            // later today. This runs on a timer thread, where an unhandled exception would end the program.
             Log.Warn($"Update check failed: {exception.Message}");
             try { _timer.Change(RetryAfterFailure, Interval); }
             catch (ObjectDisposedException) { }
@@ -122,12 +131,16 @@ internal sealed class UpdateChecker : IDisposable
         return best;
     }
 
+    private static int _installing;
+
     /// <summary>
-    /// Downloads the update, checks it against its published SHA-256 and starts its silent install, which closes
-    /// this copy and starts the new one. Returns an error message, or null on success.
+    /// Downloads the update, checks it against its published SHA-256 and its own version, and starts its silent
+    /// install, which closes this copy and starts the new one. Returns an error message for the user, or null on
+    /// success or when an install is already under way.
     /// </summary>
     public static string? Install(AvailableUpdate update)
     {
+        if (Interlocked.Exchange(ref _installing, 1) != 0) return null; // a second click while downloading
         try
         {
             string folder = Path.Combine(Path.GetTempPath(), "BatteryStrip-update");
@@ -139,8 +152,15 @@ internal sealed class UpdateChecker : IDisposable
             string actual = Sha256(exe);
             if (actual != expected)
             {
+                Log.Warn($"Update {update.Version}: checksum mismatch ({actual} vs {expected}).");
                 File.Delete(exe);
-                return $"checksum mismatch ({actual} ≠ {expected})";
+                return Text.Current.UpdateDownloadBroken;
+            }
+            if (AppVersion.Parse(FileVersionInfo.GetVersionInfo(exe).ProductVersion) is not AppVersion downloaded || !downloaded.Equals(update.Version))
+            {
+                Log.Warn($"Update {update.Version}: the downloaded file is version {FileVersionInfo.GetVersionInfo(exe).ProductVersion}.");
+                File.Delete(exe);
+                return Text.Current.UpdateDownloadBroken;
             }
 
             Log.Info($"Installing update {update.Version}.");
@@ -150,7 +170,12 @@ internal sealed class UpdateChecker : IDisposable
         catch (Exception exception) when (exception is WebException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             Log.Error("Update failed", exception);
-            return exception.Message;
+            return exception is WebException ? Text.Current.UpdateDownloadFailed : exception.Message;
+        }
+        finally
+        {
+            // After a success this copy is about to be closed by the new one; after a failure the user may try again.
+            Interlocked.Exchange(ref _installing, 0);
         }
     }
 

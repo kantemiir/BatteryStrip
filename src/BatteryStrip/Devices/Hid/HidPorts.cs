@@ -222,17 +222,31 @@ internal sealed class HidFeaturePort : IDisposable
 
     private HidFeaturePort(SafeFileHandle handle) => _handle = handle;
 
+    /// <summary>
+    /// Opens the collection for feature reports. Windows keeps mouse and keyboard collections to itself and refuses
+    /// read-write access to them; a handle without access rights still carries feature reports, so that is the fallback.
+    /// </summary>
     public static HidFeaturePort? Open(HidCollection collection)
     {
         if (collection.FeatureLength <= 0) return null;
-        SafeFileHandle handle = HidNative.CreateFile(collection.Path, HidNative.GenericRead | HidNative.GenericWrite, HidNative.ShareReadWrite,
-            IntPtr.Zero, HidNative.OpenExisting, 0, IntPtr.Zero);
-        if (handle.IsInvalid)
+        foreach (uint access in new[] { HidNative.GenericRead | HidNative.GenericWrite, 0u })
         {
+            SafeFileHandle handle = HidNative.CreateFile(collection.Path, access, HidNative.ShareReadWrite, IntPtr.Zero, HidNative.OpenExisting, 0, IntPtr.Zero);
+            if (!handle.IsInvalid) return new HidFeaturePort(handle);
             handle.Dispose();
-            return null;
         }
-        return new HidFeaturePort(handle);
+        return null;
+    }
+
+    /// <summary>Reads the input report with the given id on request (GET_REPORT), without waiting for the device to send it.</summary>
+    /// <exception cref="Win32Exception">The transfer failed.</exception>
+    public byte[] GetInput(byte reportId, int length)
+    {
+        var report = new byte[length];
+        report[0] = reportId;
+        if (!HidNative.HidD_GetInputReport(_handle, report, report.Length))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        return report;
     }
 
     /// <param name="report">Full report: byte 0 is the report id, the length equals the collection's feature report length.</param>

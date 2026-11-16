@@ -43,6 +43,9 @@ internal abstract class DeviceSession : IDisposable
     /// <summary>True once the session stopped, by itself or through <see cref="Dispose"/>.</summary>
     public bool HasEnded => _run.IsCompleted;
 
+    /// <summary>Raised when a session stops by itself rather than through <see cref="Dispose"/>. May come from any thread.</summary>
+    public static event Action? EndedOnItsOwn;
+
     protected abstract string Name { get; }
 
     protected abstract Task RunAsync(CancellationToken cancellation);
@@ -69,6 +72,7 @@ internal abstract class DeviceSession : IDisposable
             {
                 Log.Error($"{Name}: session failed", exception);
             }
+            if (!_cancellation.IsCancellationRequested) EndedOnItsOwn?.Invoke();
         });
     }
 

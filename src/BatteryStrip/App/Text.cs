@@ -15,14 +15,22 @@ internal abstract class Strings
     public abstract string NoCharge { get; }
     public abstract string Asleep { get; }
     public abstract string Charging { get; }
-    public abstract string Approximate { get; }
     public abstract string WaitingForSilence { get; }
     public abstract string NoAnswer { get; }
     public abstract string NoData { get; }
     public abstract string NoDevices { get; }
+    public abstract string NoDevicesHint { get; }
     public abstract string DataFrom(string state, string age);
     public abstract string Updated(TimeSpan age);
+
+    /// <summary>Status of a percent estimated from voltage. The word goes first, so it is not read as "about N minutes ago".</summary>
+    public abstract string Estimated(TimeSpan age);
+
+    /// <summary>Short age for one-line statuses: "12 мин назад", "12 min ago".</summary>
     public abstract string Age(TimeSpan age);
+
+    /// <summary>A percentage as written in this language: "20 %" (with a no-break space) in Russian, "20%" in English.</summary>
+    public abstract string Percent(int value);
 
     // Flyout footer and menus.
     public abstract string WarnsAt(int low, int critical);
@@ -53,6 +61,9 @@ internal abstract class Strings
     public abstract string BluetoothDevice { get; }
     public abstract string LogitechDevice(Core.DeviceKind kind);
 
+    /// <summary>Default name of a device of a known brand whose model is unknown, for example "Razer mouse".</summary>
+    public abstract string BrandDevice(string brand, Core.DeviceKind kind);
+
     // Notifications.
     public abstract string LowBattery { get; }
     public abstract string CriticalBattery { get; }
@@ -63,6 +74,10 @@ internal abstract class Strings
     // Installer and questions.
     public abstract string InstallQuestion(string version);
     public abstract string UpdateQuestion(string installed, string version);
+    public abstract string ReinstallQuestion(string version);
+    public abstract string DowngradeQuestion(string installed, string version);
+    public abstract string UpdateDownloadBroken { get; }
+    public abstract string UpdateDownloadFailed { get; }
     public abstract string InstallFailed(string reason);
     public abstract string Installed { get; }
     public abstract string UninstallQuestion { get; }
@@ -96,19 +111,21 @@ internal sealed class RussianStrings : Strings
     public override string NoCharge => "Не передаёт заряд";
     public override string Asleep => "Спит";
     public override string Charging => "Заряжается";
-    public override string Approximate => ", примерно";
-    public override string WaitingForSilence => "Ждёт тишины в наушниках";
+    public override string WaitingForSilence => "Ждёт тишины";
     public override string NoAnswer => "Нет ответа";
     public override string NoData => "нет данных";
-    public override string NoDevices => "Устройства с известным зарядом не найдены";
-    public override string DataFrom(string state, string age) => $"{state}, данные {age}";
+    public override string NoDevices => "Устройства не найдены";
+    public override string NoDevicesHint => "Шестерёнка → «Сообщить об устройстве»";
+    public override string DataFrom(string state, string age) => $"{state} · {age}";
     public override string Updated(TimeSpan age) => age < JustNowLimit ? "Обновлено только что" : $"Обновлено {Age(age)}";
+    public override string Estimated(TimeSpan age) => $"Примерный заряд, {Age(age)}";
+    public override string Percent(int value) => $"{value}\u00A0%";
 
     public override string Age(TimeSpan age)
     {
         if (age < JustNowLimit) return "только что";
-        if (age < TimeSpan.FromHours(1)) return $"{Count((int)age.TotalMinutes, "минуту", "минуты", "минут")} назад";
-        if (age < TimeSpan.FromDays(1)) return $"{Count((int)age.TotalHours, "час", "часа", "часов")} назад";
+        if (age < TimeSpan.FromHours(1)) return $"{(int)age.TotalMinutes}\u00A0мин назад";
+        if (age < TimeSpan.FromDays(1)) return $"{(int)age.TotalHours}\u00A0ч назад";
         return $"{Count((int)age.TotalDays, "день", "дня", "дней")} назад";
     }
 
@@ -123,11 +140,11 @@ internal sealed class RussianStrings : Strings
         return $"{n} {word}";
     }
 
-    public override string WarnsAt(int low, int critical) => $"Предупреждать при {low}% и {critical}%";
+    public override string WarnsAt(int low, int critical) => $"Предупреждать при {Percent(low)} и {Percent(critical)}";
     public override string WarningsOff => "Предупреждения выключены";
     public override string MenuAutostart => "Запускать вместе с Windows";
     public override string MenuWarnings => "Предупреждать о низком заряде";
-    public override string MenuG435 => "Читать заряд Logitech G435 (звук прерывается на секунду)";
+    public override string MenuG435 => "Читать заряд G435 (прерывает звук на секунду)";
     public override string MenuUpdates => "Проверять обновления";
     public override string MenuRefresh => "Обновить заряд сейчас";
     public override string MenuOpenLog => "Открыть журнал";
@@ -137,7 +154,7 @@ internal sealed class RussianStrings : Strings
     public override string ReportStarted => "Собираю отчёт об устройствах";
     public override string ReportStartedBody => "Это займёт меньше минуты. Устройство, о котором хотите сообщить, должно быть включено и подключено.";
     public override string ReportReady(string fileName) =>
-        $"Отчёт готов: файл {fileName} выделен в открывшемся окне.\n\nОтправьте его автору программы, например в Telegram, или приложите к заявке на GitHub. Напишите, какое это устройство и какой заряд показывает его родная программа.\n\nВ отчёте только коды и названия устройств и то, что программа смогла прочитать. Сам он никуда не отправляется.";
+        $"Отчёт готов: файл {fileName} выделен в открывшемся окне.\n\nОтправьте его автору программы, например в Telegram, или приложите к заявке на GitHub. Напишите, какое это устройство и какой заряд показывает его родная программа.\n\nВ отчёте коды и названия устройств и то, что программа смогла прочитать. Названия Bluetooth-устройств могут содержать ваше имя, а рядом с ними — их Bluetooth-адреса: просмотрите файл перед отправкой. Сам он никуда не отправляется.";
     public override string ReportFailed => "Не удалось собрать отчёт. Подробности в журнале.";
     public override string MenuInstallUpdate(string version) => $"Установить версию {version}";
 
@@ -156,8 +173,17 @@ internal sealed class RussianStrings : Strings
         Core.DeviceKind.Gamepad => "Геймпад Logitech",
         _ => "Устройство Logitech",
     };
+    public override string BrandDevice(string brand, Core.DeviceKind kind) => kind switch
+    {
+        Core.DeviceKind.Mouse => $"Мышь {brand}",
+        Core.DeviceKind.Keyboard => $"Клавиатура {brand}",
+        Core.DeviceKind.Headset => $"Наушники {brand}",
+        Core.DeviceKind.Gamepad => $"Геймпад {brand}",
+        Core.DeviceKind.Speaker => $"Колонка {brand}",
+        _ => $"Устройство {brand}",
+    };
 
-    public override string LowBattery => "Заряд меньше 20 %.";
+    public override string LowBattery => "Заряд 20\u00A0% или меньше.";
     public override string CriticalBattery => "Заряд почти закончился, пора зарядить.";
     public override string NotificationSample => "Так будут выглядеть предупреждения о низком заряде.";
     public override string UpdateAvailable(string version) => $"Доступна версия {version}";
@@ -167,6 +193,14 @@ internal sealed class RussianStrings : Strings
         $"Установить «{AppName}» {version}?\n\nПрограмма покажет заряд беспроводных устройств на панели задач и будет запускаться вместе с Windows. Права администратора не нужны.";
     public override string UpdateQuestion(string installed, string version) =>
         $"«{AppName}» уже установлена (версия {installed}).\n\nЗаменить её версией {version}? Настройки и сохранённые значения останутся.";
+    public override string ReinstallQuestion(string version) =>
+        $"«{AppName}» {version} уже установлена.\n\nУстановить её заново? Настройки и сохранённые значения останутся.";
+    public override string DowngradeQuestion(string installed, string version) =>
+        $"Установлена более новая версия «{AppName}» — {installed}.\n\nЗаменить её более старой версией {version}? Настройки и сохранённые значения останутся.";
+    public override string UpdateDownloadBroken =>
+        "Скачанный файл повреждён или не той версии, поэтому он не запущен.\n\nПопробуйте позже ещё раз или скачайте программу со страницы проекта на GitHub.";
+    public override string UpdateDownloadFailed =>
+        "Не удалось скачать новую версию. Проверьте интернет и попробуйте ещё раз.";
     public override string InstallFailed(string reason) => $"Не удалось установить программу:\n{reason}";
     public override string Installed =>
         $"Готово. «{AppName}» установлена и запущена.\n\nПолоска появится слева от значков в правом углу панели задач, когда программа прочитает заряд первого устройства.";
@@ -188,29 +222,30 @@ internal sealed class EnglishStrings : Strings
     public override string NoCharge => "Doesn't report its charge";
     public override string Asleep => "Asleep";
     public override string Charging => "Charging";
-    public override string Approximate => ", approx.";
     public override string WaitingForSilence => "Waiting for silence";
     public override string NoAnswer => "No answer";
     public override string NoData => "no data";
-    public override string NoDevices => "No devices with a known charge";
-    public override string DataFrom(string state, string age) => $"{state}, read {age}";
+    public override string NoDevices => "No devices found";
+    public override string NoDevicesHint => "Gear → “Report a device”";
+    public override string DataFrom(string state, string age) => $"{state} · {age}";
     public override string Updated(TimeSpan age) => age < JustNowLimit ? "Updated just now" : $"Updated {Age(age)}";
+    public override string Estimated(TimeSpan age) => $"Estimated charge, {Age(age)}";
+    public override string Percent(int value) => $"{value}%";
 
     public override string Age(TimeSpan age)
     {
         if (age < JustNowLimit) return "just now";
-        if (age < TimeSpan.FromHours(1)) return Plural((int)age.TotalMinutes, "minute");
-        if (age < TimeSpan.FromDays(1)) return Plural((int)age.TotalHours, "hour");
-        return Plural((int)age.TotalDays, "day");
+        if (age < TimeSpan.FromHours(1)) return $"{(int)age.TotalMinutes}\u00A0min ago";
+        if (age < TimeSpan.FromDays(1)) return $"{(int)age.TotalHours}\u00A0h ago";
+        int days = (int)age.TotalDays;
+        return $"{days} day{(days == 1 ? "" : "s")} ago";
     }
 
-    private static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
-
-    public override string WarnsAt(int low, int critical) => $"Warns at {low}% and {critical}%";
+    public override string WarnsAt(int low, int critical) => $"Warns at {Percent(low)} and {Percent(critical)}";
     public override string WarningsOff => "Warnings are off";
     public override string MenuAutostart => "Start with Windows";
     public override string MenuWarnings => "Low battery warnings";
-    public override string MenuG435 => "Read Logitech G435 battery (pauses audio for a second)";
+    public override string MenuG435 => "Read G435 battery (pauses audio for a second)";
     public override string MenuUpdates => "Check for updates";
     public override string MenuRefresh => "Refresh now";
     public override string MenuOpenLog => "Open log";
@@ -218,9 +253,9 @@ internal sealed class EnglishStrings : Strings
     public override string MenuExit => "Exit";
 
     public override string ReportStarted => "Collecting a device report";
-    public override string ReportStartedBody => "This takes under a minute. Keep the device you want to report on and connected.";
+    public override string ReportStartedBody => "This takes under a minute. Keep the device you want to report switched on and connected.";
     public override string ReportReady(string fileName) =>
-        $"The report is ready: {fileName} is selected in the window that opened.\n\nSend it to the author, for example on Telegram, or attach it to a device request on GitHub. Say which device it is and what charge its own app shows.\n\nThe report holds only device codes and names and what the app could read. It is not sent anywhere by itself.";
+        $"The report is ready: {fileName} is selected in the window that opened.\n\nSend it to the author, for example on Telegram, or attach it to a device request on GitHub. Say which device it is and what charge its own app shows.\n\nThe report holds device codes and names and what the app could read. Bluetooth device names can include your name, and their Bluetooth addresses are listed next to them: look through the file before sending it. It is not sent anywhere by itself.";
     public override string ReportFailed => "Could not collect the report. See the log for details.";
     public override string MenuInstallUpdate(string version) => $"Install version {version}";
 
@@ -239,8 +274,17 @@ internal sealed class EnglishStrings : Strings
         Core.DeviceKind.Gamepad => "Logitech controller",
         _ => "Logitech device",
     };
+    public override string BrandDevice(string brand, Core.DeviceKind kind) => kind switch
+    {
+        Core.DeviceKind.Mouse => $"{brand} mouse",
+        Core.DeviceKind.Keyboard => $"{brand} keyboard",
+        Core.DeviceKind.Headset => $"{brand} headset",
+        Core.DeviceKind.Gamepad => $"{brand} controller",
+        Core.DeviceKind.Speaker => $"{brand} speaker",
+        _ => $"{brand} device",
+    };
 
-    public override string LowBattery => "Below 20%.";
+    public override string LowBattery => "20% or less.";
     public override string CriticalBattery => "Almost empty, time to charge.";
     public override string NotificationSample => "This is how low battery warnings will look.";
     public override string UpdateAvailable(string version) => $"Version {version} is available";
@@ -250,6 +294,14 @@ internal sealed class EnglishStrings : Strings
         $"Install {AppName} {version}?\n\nIt shows the charge of your wireless devices on the taskbar and starts with Windows. No administrator rights needed.";
     public override string UpdateQuestion(string installed, string version) =>
         $"{AppName} {installed} is already installed.\n\nReplace it with version {version}? Settings and remembered values are kept.";
+    public override string ReinstallQuestion(string version) =>
+        $"{AppName} {version} is already installed.\n\nInstall it again? Settings and remembered values are kept.";
+    public override string DowngradeQuestion(string installed, string version) =>
+        $"A newer {AppName}, {installed}, is installed.\n\nReplace it with the older version {version}? Settings and remembered values are kept.";
+    public override string UpdateDownloadBroken =>
+        "The downloaded file is damaged or not the expected version, so it was not run.\n\nTry again later, or download the app from the project's GitHub page.";
+    public override string UpdateDownloadFailed =>
+        "The new version could not be downloaded. Check the internet connection and try again.";
     public override string InstallFailed(string reason) => $"Installation failed:\n{reason}";
     public override string Installed =>
         $"Done. {AppName} is installed and running.\n\nThe strip appears left of the icons in the right corner of the taskbar once the first device reports its charge.";

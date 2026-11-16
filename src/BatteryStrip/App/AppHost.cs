@@ -14,6 +14,9 @@ internal sealed class AppHost : IDisposable
     /// <summary>Signalled by the installer or a second copy to ask this copy to exit.</summary>
     public const string ExitEventName = @"Local\BatteryStrip.Exit";
 
+    /// <summary>Signalled by a second copy (started from the Start menu) to ask this copy to open its window.</summary>
+    public const string ShowEventName = @"Local\BatteryStrip.Show";
+
     /// <summary>Remembered charges are written at most this often (and on exit), not on every reading.</summary>
     private static readonly TimeSpan SaveDelay = TimeSpan.FromMinutes(2);
 
@@ -30,14 +33,19 @@ internal sealed class AppHost : IDisposable
     /// The thread pool starts a thread for a timer or a device reply and retires it after a short idle time. A
     /// retired thread keeps its handle and a few events until the garbage collector finalizes its Thread object,
     /// and this program allocates so little that a collection may not come for hours: the handle count of the
-    /// process would creep up all day. A background collection every few minutes releases them; on a heap
-    /// this small it takes well under a millisecond and does not stop the strip.
+    /// process would creep up all day. A collection every few minutes releases them; on a heap this small it takes
+    /// well under a millisecond. Right after it the handle count is the real baseline, so a new high is logged:
+    /// a leak shows up in the log instead of hiding behind the collections.
     /// </summary>
-    private readonly Timer _housekeeping = new(_ => GC.Collect(2, GCCollectionMode.Forced, blocking: false), null, HousekeepingInterval, HousekeepingInterval);
+    private readonly Timer _housekeeping;
+
+    private int _handleHighWater;
 
     private static readonly TimeSpan HousekeepingInterval = TimeSpan.FromMinutes(10);
     private readonly EventWaitHandle _exitEvent;
     private readonly RegisteredWaitHandle _exitWait;
+    private readonly EventWaitHandle _showEvent;
+    private readonly RegisteredWaitHandle _showWait;
     private readonly int _mainThreadId = GetCurrentThreadId();
     private int _savePending;
     private int _askedG435;
@@ -46,6 +54,7 @@ internal sealed class AppHost : IDisposable
     /// <param name="forceTray">Show tray icons even while the strip works (for testing the fallback).</param>
     public AppHost(Settings settings, bool forceTray = false)
     {
+        _housekeeping = new Timer(_ => Housekeeping(), null, HousekeepingInterval, HousekeepingInterval);
         _settings = settings;
         _store.Import(ChargeMemory.Load(ChargeMemory.DefaultPath));
         Notifier.Register();
@@ -79,7 +88,11 @@ internal sealed class AppHost : IDisposable
                 _devices?.RequestRefresh(); // the first read waits for silence
             },
             GetUpdates: () => AppInfo.HasRepository ? _settings.UpdateChecks == true : null,
-            SetUpdates: value => _settings.UpdateChecks = value,
+            SetUpdates: value =>
+            {
+                _settings.UpdateChecks = value;
+                if (value) _updates.CheckSoon();
+            },
             AvailableUpdate: () => _updates.Available?.Version.ToString(),
             InstallUpdate: InstallUpdate,
             RefreshDevices: () => _devices?.RequestRefresh(WakeReason.UserRefresh),
@@ -90,6 +103,8 @@ internal sealed class AppHost : IDisposable
         {
             if (_strip.ScreenBounds is User32.RECT bounds) _flyout.Toggle(bounds);
         };
+        _strip.ShowRequested += anchor => _flyout.Show(anchor);
+        _strip.SessionEnding += Save;
 
         _tray = new TrayIcons(_store);
         _tray.ContextMenuRequested += ShowMenu;
@@ -108,8 +123,23 @@ internal sealed class AppHost : IDisposable
 
         if (AppInfo.HasRepository && _settings.UpdateChecks == null) InBackground(() => _settings.UpdateChecks = Dialogs.Ask(Text.Current.AskUpdates));
 
+        // A self-update leaves its download behind; once this (new) copy runs, it is no longer needed.
+        InBackground(() =>
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(30));
+            try
+            {
+                if (System.IO.Directory.Exists(Installer.UpdateFolder)) System.IO.Directory.Delete(Installer.UpdateFolder, recursive: true);
+            }
+            catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+            {
+            }
+        });
+
         _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
         _exitWait = ThreadPool.RegisterWaitForSingleObject(_exitEvent, (_, _) => RequestExit(), null, Timeout.Infinite, executeOnlyOnce: true);
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        _showWait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) => _strip.RequestShow(), null, Timeout.Infinite, executeOnlyOnce: false);
     }
 
     /// <summary>Runs the message loop until the program is asked to exit.</summary>
@@ -131,6 +161,8 @@ internal sealed class AppHost : IDisposable
     {
         _exitWait.Unregister(null);
         _exitEvent.Dispose();
+        _showWait.Unregister(null);
+        _showEvent.Dispose();
         _updates.Dispose();
         _tray.Dispose();
         _flyout.Dispose();
@@ -142,6 +174,27 @@ internal sealed class AppHost : IDisposable
     }
 
     private void Save() => ChargeMemory.Save(ChargeMemory.DefaultPath, _store.Export());
+
+    private void Housekeeping()
+    {
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            using var self = System.Diagnostics.Process.GetCurrentProcess();
+            int handles = self.HandleCount;
+            // The first collection sets the baseline; after that every new high by a clear margin is worth a line.
+            if (_handleHighWater == 0 || handles <= _handleHighWater) _handleHighWater = Math.Max(_handleHighWater, handles);
+            else if (handles >= _handleHighWater + 100)
+            {
+                Log.Warn($"Handles after cleanup: {handles} (previous high {_handleHighWater}), {self.Threads.Count} threads, {self.PrivateMemorySize64 / (1024 * 1024)} MB.");
+                _handleHighWater = handles;
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
+    }
 
     /// <summary>Asks once per run whether the G435 may be read; the question is a message box on its own thread.</summary>
     private void AskAboutG435()

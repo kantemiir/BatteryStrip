@@ -25,6 +25,13 @@ internal sealed class Settings
     private readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _names = new(StringComparer.Ordinal);
 
+    /// <summary>"en   # ru, en, …" → "en". Only for option values: a device name may contain " #" ("Mouse #2").</summary>
+    internal static string StripComment(string value)
+    {
+        int hash = value.IndexOf(" #", StringComparison.Ordinal);
+        return hash < 0 ? value : value.Substring(0, hash).TrimEnd();
+    }
+
     public Settings(string path)
     {
         _path = path;
@@ -37,7 +44,7 @@ internal sealed class Settings
                 if (eq <= 0 || line.TrimStart().StartsWith("#", StringComparison.Ordinal)) continue;
                 string key = line.Substring(0, eq).Trim(), value = line.Substring(eq + 1).Trim();
                 if (key.StartsWith(NamePrefix, StringComparison.Ordinal)) _names[key.Substring(NamePrefix.Length).Trim()] = value;
-                else _values[key] = value;
+                else _values[key] = StripComment(value);
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -126,6 +133,9 @@ internal static class Autostart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
+    /// <summary>Where Task Manager and Settings → Startup apps record that an entry is turned off (odd first byte).</summary>
+    private const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
     public static bool IsEnabled
     {
         get
@@ -133,7 +143,10 @@ internal static class Autostart
             try
             {
                 using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKey);
-                return key?.GetValue(AppInfo.Id) is string command && command.IndexOf(AppInfo.ExeName, StringComparison.OrdinalIgnoreCase) >= 0;
+                bool registered = key?.GetValue(AppInfo.Id) is string command && command.IndexOf(AppInfo.ExeName, StringComparison.OrdinalIgnoreCase) >= 0;
+                using RegistryKey? approved = Registry.CurrentUser.OpenSubKey(ApprovedKey);
+                bool turnedOff = approved?.GetValue(AppInfo.Id) is byte[] flags && flags.Length > 0 && (flags[0] & 1) != 0;
+                return registered && !turnedOff;
             }
             catch (Exception exception) when (exception is System.Security.SecurityException or IOException)
             {
@@ -149,6 +162,10 @@ internal static class Autostart
             using RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKey);
             if (enabled) key.SetValue(AppInfo.Id, $"\"{exePath}\"", RegistryValueKind.String);
             else key.DeleteValue(AppInfo.Id, throwOnMissingValue: false);
+
+            // Turning it on here also clears a "turned off" mark from Task Manager; turning it off leaves no mark behind.
+            using RegistryKey? approved = Registry.CurrentUser.OpenSubKey(ApprovedKey, writable: true);
+            approved?.DeleteValue(AppInfo.Id, throwOnMissingValue: false);
         }
         catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {

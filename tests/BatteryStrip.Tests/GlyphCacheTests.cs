@@ -18,6 +18,14 @@ public sealed class WindowsFontsFactAttribute : FactAttribute
 /// <summary>Renders real glyphs through DirectWrite, so these tests need Windows with its standard fonts.</summary>
 public class GlyphCacheTests
 {
+    [Fact]
+    public void DirectWrite_tells_installed_fonts_from_missing_ones()
+    {
+        var present = SystemFonts.Present(["Segoe UI", "No Such Font 4F2A"]);
+        Assert.Contains("Segoe UI", present);
+        Assert.DoesNotContain("No Such Font 4F2A", present);
+    }
+
     private static int FullPixels(GlyphMask mask) =>
         Enumerable.Range(0, mask.Width * mask.Height).Count(i => mask.At(i % mask.Width, i / mask.Width) >= 230);
 

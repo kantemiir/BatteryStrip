@@ -14,6 +14,12 @@ internal sealed class DeviceWatcher : IDisposable
 {
     private static readonly TimeSpan SettleTime = TimeSpan.FromMilliseconds(800);
 
+    /// <summary>A driver that adds and removes interfaces every half second would otherwise postpone the rescan for ever.</summary>
+    private static readonly TimeSpan MaxSettle = TimeSpan.FromSeconds(5);
+
+    private readonly object _gate = new();
+    private DateTime? _burstStart;
+
     private readonly Timer _settle;
     private readonly NotifyCallback _callback; // kept in a field so the delegate outlives the native registration
     private IntPtr _registration;
@@ -23,7 +29,11 @@ internal sealed class DeviceWatcher : IDisposable
 
     public DeviceWatcher()
     {
-        _settle = new Timer(_ => Changed?.Invoke());
+        _settle = new Timer(_ =>
+        {
+            lock (_gate) _burstStart = null;
+            Changed?.Invoke();
+        });
         _callback = OnNotification;
 
         var filter = new CM_NOTIFY_FILTER
@@ -50,8 +60,15 @@ internal sealed class DeviceWatcher : IDisposable
     {
         if (action is ActionInterfaceArrival or ActionInterfaceRemoval)
         {
-            try { _settle.Change(SettleTime, Timeout.InfiniteTimeSpan); }
-            catch (ObjectDisposedException) { }
+            lock (_gate)
+            {
+                DateTime now = DateTime.UtcNow;
+                _burstStart ??= now;
+                TimeSpan left = _burstStart.Value + MaxSettle - now;
+                TimeSpan wait = left < SettleTime ? (left > TimeSpan.Zero ? left : TimeSpan.Zero) : SettleTime;
+                try { _settle.Change(wait, Timeout.InfiniteTimeSpan); }
+                catch (ObjectDisposedException) { }
+            }
         }
         return 0;
     }

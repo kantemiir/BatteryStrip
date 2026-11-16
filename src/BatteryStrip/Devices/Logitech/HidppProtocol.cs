@@ -108,7 +108,8 @@ internal static class Hidpp
     /// Battery from the parameters of a battery getter or a battery event.
     /// <paramref name="percentSupported"/> applies to 0x1004: without it the device reports only coarse levels.
     /// </summary>
-    public static HidppBattery? ParseBattery(ushort feature, byte[] p, bool percentSupported = true)
+    /// <param name="productId">Product id of a headset connected directly, for its own voltage curve (see <see cref="HeadsetCurves"/>).</param>
+    public static HidppBattery? ParseBattery(ushort feature, byte[] p, bool percentSupported = true, ushort productId = 0)
     {
         if (p.Length < 3) return null;
         switch (feature)
@@ -149,12 +150,61 @@ internal static class Hidpp
                 // millivolts (big endian), flags: bit 0 device on, bit 1 charging. Headsets use this one.
                 if ((p[2] & 0x01) == 0) return new HidppBattery(null, false, true);
                 int millivolts = (p[0] << 8) | p[1];
-                return millivolts is >= 2500 and <= 4600 ? new HidppBattery(LiPoBattery.Percent(millivolts), (p[2] & 0x02) != 0, true) : null;
+                return millivolts is >= 2500 and <= 4600 ? new HidppBattery(HeadsetCurves.Percent(productId, millivolts), (p[2] & 0x02) != 0, true) : null;
             }
 
             default:
                 return null;
         }
+    }
+
+    /// <summary>HID++ 1.0 error code meaning "invalid sub id": the device behind the receiver speaks HID++ 1.0 only.</summary>
+    public const byte ErrorInvalidSubId = 0x01;
+
+    /// <summary>HID++ 1.0 battery registers: 0x0D gives a percent, older devices only have 0x07 with a coarse level.</summary>
+    public const byte RegisterBatteryCharge = 0x0D, RegisterBatteryStatus = 0x07;
+
+    public const int ShortLength = 7;
+
+    /// <summary>HID++ 1.0 register read, a short report: <c>10 device 81 register 00 00 00</c>.</summary>
+    public static byte[] RegisterRead(byte device, byte register) => [ShortReport, device, 0x81, register, 0, 0, 0];
+
+    /// <summary>
+    /// The answer to a register read, if this report is it: <c>10 device 81 register p0 p1 p2</c>, or the error
+    /// <c>10 device 8F 81 register code</c>.
+    /// </summary>
+    public static HidppReply? MatchRegisterReply(byte[] report, byte device, byte register)
+    {
+        if (report.Length < ShortLength || report[0] != ShortReport || report[1] != device) return null;
+        if (report[2] == 0x8F && report[3] == 0x81 && report[4] == register) return new HidppReply(Array.Empty<byte>(), report[5]);
+        if (report[2] != 0x81 || report[3] != register) return null;
+        return new HidppReply([report[4], report[5], report[6]], null);
+    }
+
+    /// <summary>
+    /// Battery from a HID++ 1.0 register, as Solaar reads it. Register 0x0D: percent, then a status whose high nibble is
+    /// 3 discharging, 5 recharging, 9 full. Register 0x07: level 7 full, 5 good, 3 low, 1 critical, then a charging byte
+    /// (0 discharging, bits 0x21 recharging, bits 0x22 full).
+    /// </summary>
+    public static HidppBattery? ParseRegisterBattery(byte register, byte[] p)
+    {
+        if (p.Length < 3) return null;
+        if (register == RegisterBatteryCharge)
+        {
+            int status = p[2] & 0xF0;
+            if (status == 0x90) return new HidppBattery(100, false, false);
+            if (p[0] is 0 or > 100) return null;
+            return new HidppBattery(p[0], status == 0x50, false);
+        }
+        if (register == RegisterBatteryStatus)
+        {
+            bool full = p[1] != 0 && (p[1] & 0x22) == 0x22 && (p[1] & 0x21) != 0x21;
+            if (full) return new HidppBattery(100, false, false);
+            bool charging = p[1] != 0 && (p[1] & 0x21) == 0x21;
+            int? percent = p[0] switch { 7 => 90, 5 => 50, 3 => 20, 1 => 5, _ => null };
+            return percent == null ? null : new HidppBattery(percent, charging, true);
+        }
+        return null;
     }
 
     /// <summary>Device type from the DeviceName feature (function 2).</summary>

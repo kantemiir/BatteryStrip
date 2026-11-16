@@ -32,7 +32,8 @@ internal static class Diagnose
             output.WriteLine("HID collections (VID:PID, usage page/usage, report sizes in/out/feature):");
             foreach (HidCollection c in HidCollection.EnumeratePresent().OrderBy(c => c.VendorId).ThenBy(c => c.ProductId).ThenBy(c => c.UsagePage))
             {
-                output.WriteLine($"  {c.VendorId:X4}:{c.ProductId:X4}  {c.UsagePage:X4}/{c.Usage:X2}  {c.InputLength,3}/{c.OutputLength,3}/{c.FeatureLength,3}  \"{c.Product}\"");
+                string battery = Devices.Generic.GenericHidDriver.DeclaresBattery(c) ? "  [battery usage]" : "";
+                output.WriteLine($"  {c.VendorId:X4}:{c.ProductId:X4}  {c.UsagePage:X4}/{c.Usage:X2}  {c.InputLength,3}/{c.OutputLength,3}/{c.FeatureLength,3}  \"{c.Product}\"{battery}");
             }
             output.WriteLine();
 

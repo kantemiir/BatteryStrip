@@ -41,28 +41,37 @@ public class StatusTextTests
     [Fact]
     public void Older_reading_shows_its_age()
     {
-        Assert.Equal("Обновлено 12 минут назад", Ru(Device(minutesAgo: 12)));
-        Assert.Equal("Обновлено 2 часа назад", Ru(Device(minutesAgo: 125)));
-        Assert.Equal("Updated 12 minutes ago", En(Device(minutesAgo: 12)));
-        Assert.Equal("Updated 1 hour ago", En(Device(minutesAgo: 61)));
+        Assert.Equal("Обновлено 12\u00A0мин назад", Ru(Device(minutesAgo: 12)));
+        Assert.Equal("Обновлено 2\u00A0ч назад", Ru(Device(minutesAgo: 125)));
+        Assert.Equal("Updated 12\u00A0min ago", En(Device(minutesAgo: 12)));
+        Assert.Equal("Updated 1\u00A0h ago", En(Device(minutesAgo: 61)));
     }
 
     [Fact]
-    public void Estimated_value_is_marked()
+    public void Estimated_value_is_marked_before_the_age()
     {
-        Assert.Equal("Обновлено 5 минут назад, примерно", Ru(Device(estimate: true, minutesAgo: 5)));
-        Assert.Equal("Updated 5 minutes ago, approx.", En(Device(estimate: true, minutesAgo: 5)));
+        // "Примерно" after the time read as "about five minutes ago"; the word now leads.
+        Assert.Equal("Примерный заряд, 5\u00A0мин назад", Ru(Device(estimate: true, minutesAgo: 5)));
+        Assert.Equal("Estimated charge, 5\u00A0min ago", En(Device(estimate: true, minutesAgo: 5)));
+    }
+
+    [Fact]
+    public void Percent_is_written_per_language()
+    {
+        Assert.Equal("20\u00A0%", Strings.Russian.Percent(20));
+        Assert.Equal("20%", Strings.English.Percent(20));
+        Assert.Equal("Предупреждать при 20\u00A0% и 10\u00A0%", Strings.Russian.WarnsAt(20, 10));
     }
 
     [Fact]
     public void Charging_asleep_and_no_data()
     {
         Assert.Equal("Заряжается", Ru(Device(charging: true)));
-        Assert.Equal("Спит, данные 2 часа назад", Ru(Device(asleep: true, minutesAgo: 120)));
-        Assert.Equal("Спит, данные 3 дня назад", Ru(Device(asleep: true, minutesAgo: 3 * 24 * 60)));
+        Assert.Equal("Спит · 2\u00A0ч назад", Ru(Device(asleep: true, minutesAgo: 120)));
+        Assert.Equal("Спит · 3 дня назад", Ru(Device(asleep: true, minutesAgo: 3 * 24 * 60)));
         Assert.Equal("Не передаёт заряд", Ru(Device(percent: null)));
-        Assert.Equal("Asleep, read 3 days ago", En(Device(asleep: true, minutesAgo: 3 * 24 * 60)));
-        Assert.Equal("Waiting for silence, read 4 hours ago", En(Device(asleep: true, minutesAgo: 240, note: Strings.English.WaitingForSilence)));
+        Assert.Equal("Asleep · 3 days ago", En(Device(asleep: true, minutesAgo: 3 * 24 * 60)));
+        Assert.Equal("Waiting for silence · 4\u00A0h ago", En(Device(asleep: true, minutesAgo: 240, note: Strings.English.WaitingForSilence)));
     }
 
     [Theory]

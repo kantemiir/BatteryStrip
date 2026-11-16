@@ -25,8 +25,31 @@ internal sealed record HidCollection(
 {
     public bool IsVendorDefined => UsagePage >= 0xFF00;
 
+    /// <summary>USB interface number from the "&amp;mi_02" part of the path; -1 when the path has none (one-interface devices, Bluetooth).</summary>
+    public int Interface
+    {
+        get
+        {
+            int at = Path.IndexOf("&mi_", StringComparison.OrdinalIgnoreCase);
+            if (at < 0 || at + 6 > Path.Length) return -1;
+            return int.TryParse(Path.Substring(at + 4, 2), System.Globalization.NumberStyles.HexNumber, null, out int number) ? number : -1;
+        }
+    }
+
+    /// <summary>
+    /// Collections described before, by path. Describing opens the collection and asks the device for its product
+    /// string, which can wake a sleeping device; any device event in Windows (an audio endpoint, a Bluetooth link)
+    /// starts a new listing, so known paths are taken from here instead.
+    /// </summary>
+    private static readonly Dictionary<string, HidCollection> Known = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Lists the HID collections present right now. Opens each one without access rights, so nothing is sent to a device.</summary>
     public static IReadOnlyList<HidCollection> EnumeratePresent()
+    {
+        lock (Known) return EnumeratePresentLocked();
+    }
+
+    private static IReadOnlyList<HidCollection> EnumeratePresentLocked()
     {
         var found = new List<HidCollection>();
         HidNative.HidD_GetHidGuid(out Guid hidGuid);
@@ -38,14 +61,20 @@ internal sealed record HidCollection(
             var interfaceData = new HidNative.SP_DEVICE_INTERFACE_DATA { cbSize = Marshal.SizeOf(typeof(HidNative.SP_DEVICE_INTERFACE_DATA)) };
             for (int index = 0; HidNative.SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref hidGuid, index, ref interfaceData); index++)
             {
-                if (ReadPath(set, ref interfaceData, out Guid containerId) is string path && Describe(path, containerId) is HidCollection collection)
-                    found.Add(collection);
+                if (ReadPath(set, ref interfaceData, out Guid containerId) is not string path) continue;
+                HidCollection? collection = Known.TryGetValue(path, out HidCollection? known) && known.ContainerId == containerId
+                    ? known
+                    : Describe(path, containerId);
+                if (collection != null) found.Add(collection);
             }
         }
         finally
         {
             HidNative.SetupDiDestroyDeviceInfoList(set);
         }
+
+        Known.Clear();
+        foreach (HidCollection collection in found) Known[collection.Path] = collection;
         return found;
     }
 

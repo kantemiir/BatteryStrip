@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing.Text;
 using System.Linq;
 
 namespace BatteryStrip.Rendering;
@@ -11,8 +10,11 @@ internal enum GlyphFont
     /// <summary>Segoe Fluent Icons, the icon font of Windows 11.</summary>
     Icons,
 
-    /// <summary>Segoe UI Variable, semibold, small optical size: the number inside a battery.</summary>
+    /// <summary>Segoe UI Variable, semibold, small optical size: numbers in tray icons.</summary>
     NumberSemibold,
+
+    /// <summary>Segoe UI Variable, bold, small optical size: the number on the strip, heavy enough to read at a glance.</summary>
+    NumberBold,
 
     /// <summary>Segoe UI Variable Text, regular: names and labels in the flyout.</summary>
     Body,
@@ -75,11 +77,10 @@ internal sealed class GlyphCache : IDisposable
 
     private DirectText Text => _text ??= new DirectText();
 
-    private static readonly Lazy<HashSet<string>> InstalledFamilies = new(() =>
-    {
-        using var fonts = new InstalledFontCollection();
-        return new HashSet<string>(fonts.Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
-    });
+    private static readonly Lazy<HashSet<string>> InstalledFamilies = new(() => SystemFonts.Present(
+    [
+        "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Variable Text", "Segoe UI Variable Small", "Segoe UI",
+    ]));
 
     /// <summary>The first installed family for a role, with its weight. Windows 10 lacks the Windows 11 fonts.</summary>
     private static (string Family, int Weight) FontFor(GlyphFont role)
@@ -88,6 +89,7 @@ internal sealed class GlyphCache : IDisposable
         {
             GlyphFont.Icons => [("Segoe Fluent Icons", DirectText.WeightRegular), ("Segoe MDL2 Assets", DirectText.WeightRegular)],
             GlyphFont.Body => [("Segoe UI Variable Text", DirectText.WeightRegular), ("Segoe UI", DirectText.WeightRegular)],
+            GlyphFont.NumberBold => [("Segoe UI Variable Small", DirectText.WeightBold), ("Segoe UI", DirectText.WeightBold)],
             _ => [("Segoe UI Variable Small", DirectText.WeightSemibold), ("Segoe UI", DirectText.WeightSemibold)],
         };
         foreach (var candidate in candidates)

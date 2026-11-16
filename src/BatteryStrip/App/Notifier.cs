@@ -56,12 +56,14 @@ internal static class Notifier
 
     public static void LowBattery(DeviceSnapshot device, int threshold)
     {
-        string title = $"{device.Name}: {device.Percent} %";
+        string title = device.Percent is int percent ? $"{device.Name}: {Text.Current.Percent(percent)}" : device.Name;
         string body = threshold <= ChargeLevels.CriticalThreshold ? Text.Current.CriticalBattery : Text.Current.LowBattery;
-        Show(title, body);
+        Show(title, body, TagFor(device.Id), TimeSpan.FromHours(2));
     }
 
-    public static void Show(string title, string body)
+    /// <summary>Shows a toast. With a tag, a newer toast replaces the older one of the same device in Action Center.</summary>
+    /// <param name="lifetime">After this long the toast leaves Action Center: an old battery warning is only noise.</param>
+    public static void Show(string title, string body, string? tag = null, TimeSpan? lifetime = null)
     {
         try
         {
@@ -70,13 +72,28 @@ internal static class Notifier
             XmlNodeList texts = xml.GetElementsByTagName("text");
             texts[0].AppendChild(xml.CreateTextNode(title));
             texts[1].AppendChild(xml.CreateTextNode(body));
-            ToastNotificationManager.CreateToastNotifier(AppInfo.Id).Show(new ToastNotification(xml));
+            var toast = new ToastNotification(xml);
+            if (tag != null)
+            {
+                toast.Tag = tag;
+                toast.Group = "battery";
+            }
+            if (lifetime is TimeSpan life) toast.ExpirationTime = DateTimeOffset.Now + life;
+            ToastNotificationManager.CreateToastNotifier(AppInfo.Id).Show(toast);
             Log.Info($"Notification: {title} — {body}");
         }
         catch (Exception exception)
         {
             Log.Error("Notification failed", exception);
         }
+    }
+
+    /// <summary>A short stable tag per device (toast tags are limited in length).</summary>
+    private static string TagFor(string deviceId)
+    {
+        uint hash = 2166136261;
+        foreach (char c in deviceId) hash = (hash ^ c) * 16777619;
+        return hash.ToString("X8");
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]

@@ -20,10 +20,22 @@ internal sealed class DeviceManager : IDisposable
     private Task _worker = Task.CompletedTask;
     private int _pendingWake = -1;
 
+    /// <summary>A session that stopped by itself (a transient open or read error) is restarted by a rescan this
+    /// much later, doubling while it keeps failing, so a device does not stay missing until some other device event.</summary>
+    private static readonly TimeSpan RetryFirst = TimeSpan.FromSeconds(30), RetryMax = TimeSpan.FromMinutes(10);
+
+    private readonly Timer _retry;
+    private readonly object _retryGate = new();
+    private TimeSpan _retryDelay = RetryFirst;
+    private DateTime _lastSessionEnd = DateTime.MinValue;
+    private bool _retryPending;
+
     public DeviceManager(IReadOnlyList<IDeviceSource> sources)
     {
         _sources = sources;
         _watcher.Changed += () => RequestRefresh();
+        _retry = new Timer(_ => RetryRefresh());
+        DeviceSession.EndedOnItsOwn += OnSessionEnded;
     }
 
     public void Start()
@@ -52,6 +64,8 @@ internal sealed class DeviceManager : IDisposable
 
     public void Dispose()
     {
+        DeviceSession.EndedOnItsOwn -= OnSessionEnded;
+        _retry.Dispose();
         _watcher.Dispose();
         _cancellation.Cancel();
         _worker.Wait(TimeSpan.FromSeconds(5));
@@ -76,6 +90,28 @@ internal sealed class DeviceManager : IDisposable
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void OnSessionEnded()
+    {
+        lock (_retryGate)
+        {
+            DateTime now = DateTime.UtcNow;
+            // Failures close together back off; a quiet spell starts over from the short delay.
+            _retryDelay = now - _lastSessionEnd > RetryMax + RetryMax ? RetryFirst
+                : TimeSpan.FromTicks(Math.Min(RetryMax.Ticks, _retryDelay.Ticks * 2));
+            _lastSessionEnd = now;
+            if (_retryPending) return;
+            _retryPending = true;
+            try { _retry.Change(_retryDelay, Timeout.InfiniteTimeSpan); }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private void RetryRefresh()
+    {
+        lock (_retryGate) _retryPending = false;
+        RequestRefresh();
     }
 
     private void WakeAll(WakeReason reason)

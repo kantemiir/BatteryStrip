@@ -42,6 +42,7 @@ internal abstract class NativeWindow : IDisposable
     public virtual void Dispose()
     {
         if (Handle != IntPtr.Zero && User32.IsWindow(Handle)) User32.DestroyWindow(Handle);
+        if (Handle != IntPtr.Zero) Live.TryRemove(Handle, out _);
         Handle = IntPtr.Zero;
     }
 
@@ -97,6 +98,12 @@ internal abstract class NativeWindow : IDisposable
                 else if (window.OnMessage(message, wParam, lParam) is IntPtr result)
                 {
                     return result;
+                }
+                else if (message == User32.WM_CLOSE)
+                {
+                    // The default would destroy the window (Alt+F4 on the flyout, a polite taskkill), and nothing
+                    // would recreate it. The program closes its windows itself, through Dispose.
+                    return IntPtr.Zero;
                 }
             }
             catch (Exception exception)

@@ -22,6 +22,7 @@ internal sealed class AudioActivity(Guid containerId) : IDisposable
 
     private readonly List<Endpoint> _endpoints = new();
     private DateTime _resolvedAt = DateTime.MinValue;
+    private bool _reportedMissing;
 
     private sealed class Endpoint(bool isCapture, IAudioSessionManager2 sessions, IAudioMeterInformation? meter)
     {
@@ -30,12 +31,22 @@ internal sealed class AudioActivity(Guid containerId) : IDisposable
         public IAudioMeterInformation? Meter { get; } = meter;
     }
 
-    /// <summary>Current state; null when Windows audio cannot be queried, which callers treat as busy.</summary>
+    /// <summary>
+    /// Current state; null when Windows audio cannot be queried or the device's speakers and microphone are not
+    /// found, which callers treat as busy: without them silence cannot be confirmed, and a read during music is heard.
+    /// </summary>
     public AudioState? Sample()
     {
         try
         {
             if (DateTime.UtcNow - _resolvedAt > RefreshEvery) Resolve();
+            if (_endpoints.Count == 0)
+            {
+                if (!_reportedMissing) Log.Warn("Audio endpoints of the device were not found; it is read only when the user asks.");
+                _reportedMissing = true;
+                return null;
+            }
+            _reportedMissing = false;
 
             bool open = false, audible = false, microphone = false;
             foreach (Endpoint endpoint in _endpoints)

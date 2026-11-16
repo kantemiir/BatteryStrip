@@ -1,6 +1,6 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
-using System.Windows.Automation;
 
 namespace BatteryStrip.Taskbar;
 
@@ -26,7 +26,9 @@ internal sealed class TaskListWatcher : IDisposable
     private readonly object _gate = new();
     private int _right = int.MinValue;
     private int _room = int.MinValue;
-    private AutomationElement? _frame;
+    private Uia.IUIAutomation? _automation;
+    private Uia.IUIAutomationCondition? _isButton;
+    private Uia.IUIAutomationElement? _frame;
     private IntPtr _frameTaskbar;
 
     /// <summary>Raised on a worker thread when the right edge of the app buttons moved.</summary>
@@ -52,7 +54,19 @@ internal sealed class TaskListWatcher : IDisposable
     /// <summary>Looks again soon, for example after the taskbar was recreated.</summary>
     public void CheckSoon() => _timer.Change(TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan);
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose()
+    {
+        _timer.Dispose();
+        lock (_gate)
+        {
+            Uia.Release(_frame);
+            Uia.Release(_isButton);
+            Uia.Release(_automation);
+            _frame = null;
+            _isButton = null;
+            _automation = null;
+        }
+    }
 
     private void Check()
     {
@@ -66,8 +80,13 @@ internal sealed class TaskListWatcher : IDisposable
                 if (Interlocked.Exchange(ref _right, right) != right) Changed?.Invoke();
             }
         }
-        catch (Exception exception) when (exception is ElementNotAvailableException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+        catch (Exception exception)
         {
+            // UI Automation fails in many ways while Explorer is busy or restarting (timeouts, vanished elements);
+            // on a timer thread any of them would end the program. Start from the taskbar again next time.
+            if (exception is not (COMException or InvalidCastException or InvalidOperationException))
+                App.Log.Warn($"Measuring the app buttons failed: {exception.GetType().Name}: {exception.Message}");
+            Uia.Release(_frame);
             _frame = null;
         }
         finally
@@ -95,22 +114,44 @@ internal sealed class TaskListWatcher : IDisposable
     /// <summary>Windows 11: the last app button among the children of the taskbar frame.</summary>
     private int? MeasureXaml(IntPtr taskbar)
     {
-        if (_frame == null || _frameTaskbar != taskbar)
+        _automation ??= Uia.Create();
+        _isButton ??= _automation.CreatePropertyCondition(Uia.ClassNameProperty, ButtonClass);
+        Uia.IUIAutomationTreeWalker walker = _automation.ControlViewWalker;
+        try
         {
-            _frame = null;
-            var condition = new PropertyCondition(AutomationElement.ClassNameProperty, ButtonClass);
-            AutomationElement? button = AutomationElement.FromHandle(taskbar).FindFirst(TreeScope.Descendants, condition);
-            if (button == null) return null;
-            _frame = TreeWalker.ControlViewWalker.GetParent(button);
-            _frameTaskbar = taskbar;
-            if (_frame == null) return null;
-        }
+            if (_frame == null || _frameTaskbar != taskbar)
+            {
+                Uia.Release(_frame);
+                _frame = null;
+                Uia.IUIAutomationElement root = _automation.ElementFromHandle(taskbar);
+                Uia.IUIAutomationElement? button = root.FindFirst(Uia.TreeScopeDescendants, _isButton);
+                Uia.Release(root);
+                if (button == null) return null;
+                _frame = walker.GetParentElement(button);
+                Uia.Release(button);
+                _frameTaskbar = taskbar;
+                if (_frame == null) return null;
+            }
 
-        // App buttons come after Start, Search and Task View; walking back from the end finds the last one quickly.
-        for (AutomationElement? child = TreeWalker.ControlViewWalker.GetLastChild(_frame); child != null; child = TreeWalker.ControlViewWalker.GetPreviousSibling(child))
-        {
-            if (child.Current.ClassName == ButtonClass) return (int)Math.Ceiling(child.Current.BoundingRectangle.Right);
+            // App buttons come after Start, Search and Task View; walking back from the end finds the last one quickly.
+            Uia.IUIAutomationElement? child = walker.GetLastChildElement(_frame);
+            while (child != null)
+            {
+                if (Uia.ClassName(child) == ButtonClass)
+                {
+                    double? right = Uia.Right(child);
+                    Uia.Release(child);
+                    return right is double r ? (int)Math.Ceiling(r) : null;
+                }
+                Uia.IUIAutomationElement? previous = walker.GetPreviousSiblingElement(child);
+                Uia.Release(child);
+                child = previous;
+            }
+            return null;
         }
-        return null;
+        finally
+        {
+            Uia.Release(walker);
+        }
     }
 }

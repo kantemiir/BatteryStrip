@@ -16,6 +16,9 @@ internal abstract record G435Reading
 
     public sealed record Voltage(int Millivolts) : G435Reading;
 
+    /// <summary>The receiver was already in service mode: another program (Logitech's firmware updater) may be using it.</summary>
+    public sealed record Busy : G435Reading;
+
     /// <summary>The receiver did not answer as expected; nothing is known.</summary>
     public sealed record Failed(string Reason) : G435Reading;
 }
@@ -42,23 +45,36 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
     /// <summary>Every frame of the last read, for the log when something went wrong.</summary>
     public string Transcript => string.Join(Environment.NewLine, _transcript);
 
+    /// <summary>True when the last read left service mode and the receiver confirmed it.</summary>
+    public bool ExitConfirmed { get; private set; }
+
     /// <summary>
     /// Reads the battery voltage. Takes about two seconds, during which the headset's audio is paused.
     /// Not cancellable on purpose: an interrupted visit would leave the receiver in service mode.
     /// </summary>
-    public async Task<G435Reading> ReadBatteryAsync()
+    /// <param name="mayTakeOver">When the receiver is already in service mode: true to go on and leave service mode
+    /// afterwards (it was probably left there by an interrupted read of ours), false to touch nothing and report
+    /// <see cref="G435Reading.Busy"/>, because another program such as Logitech's firmware updater may be using it.</param>
+    public async Task<G435Reading> ReadBatteryAsync(bool mayTakeOver)
     {
         _transcript.Clear();
         _clock.Restart();
         _sequence = 1;
+        ExitConfirmed = false;
         int? originalMode = null;
         bool modeChanged = false;
+        bool leave = true;
 
         try
         {
             await input.DiscardPendingAsync(CancellationToken.None).ConfigureAwait(false);
 
             byte ack = await SendAsync(G435Protocol.EnterServiceMode()).ConfigureAwait(false);
+            if (ack == G435Protocol.AckAlreadyInServiceMode && !mayTakeOver)
+            {
+                leave = false;
+                return new G435Reading.Busy();
+            }
             if (ack is not (G435Protocol.AckOk or G435Protocol.AckAlreadyInServiceMode))
                 return new G435Reading.Failed($"enter acknowledged with 0x{ack:X2}");
             DropStaleReplies();
@@ -84,7 +100,7 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
         }
         finally
         {
-            await LeaveAsync(modeChanged ? originalMode : null).ConfigureAwait(false);
+            if (leave) await LeaveAsync(modeChanged ? originalMode : null).ConfigureAwait(false);
         }
     }
 
@@ -102,7 +118,7 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
 
         try
         {
-            await SendAsync(G435Protocol.ExitServiceMode()).ConfigureAwait(false);
+            ExitConfirmed = await SendAsync(G435Protocol.ExitServiceMode()).ConfigureAwait(false) == G435Protocol.AckOk;
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or TimeoutException)
         {
@@ -158,6 +174,7 @@ internal sealed class G435Bridge(HidFeaturePort feature, HidInputPort input)
                 continue;
             }
             if (parse(reply) is int value) return value;
+            await Task.Delay(ReplyPoll).ConfigureAwait(false);
         }
         return null;
     }

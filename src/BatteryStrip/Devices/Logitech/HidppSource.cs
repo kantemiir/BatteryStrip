@@ -54,8 +54,11 @@ internal sealed class HidppSource(DeviceStore store, DeviceNaming naming, Contai
 }
 
 /// <summary>What is known about one device behind a connection.</summary>
-internal sealed class HidppDevice(byte index, DeviceDescriptor descriptor, byte batteryIndex, ushort batteryFeature, bool percentSupported)
+/// <param name="legacyRegister">For a HID++ 1.0 device, the battery register it answers (0x0D or 0x07); 0 for HID++ 2.0.</param>
+internal sealed class HidppDevice(byte index, DeviceDescriptor descriptor, byte batteryIndex, ushort batteryFeature, bool percentSupported, byte legacyRegister = 0)
 {
+    public byte LegacyRegister { get; } = legacyRegister;
+
     public byte Index { get; } = index;
     public DeviceDescriptor Descriptor { get; } = descriptor;
     public byte BatteryIndex { get; } = batteryIndex;
@@ -76,6 +79,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
     private readonly HashSet<byte> _toProbe = new();
     private readonly WakeSignal _wake = new();
     private HidOutputPort? _output;
+    private HidOutputPort? _shortOutput;
     private HidReportPump? _pump;
 
     protected override string Name => $"Logitech {longReports.ProductId:X4}";
@@ -102,7 +106,11 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
             return;
         }
 
+        // Short reports carry HID++ 1.0 register reads for older devices behind a Unifying receiver.
+        _shortOutput = shortReports != null ? HidOutputPort.Open(shortReports) : null;
+
         using (_output)
+        using (_shortOutput)
         using (_pump = shortInput != null ? new HidReportPump(longInput, shortInput) : new HidReportPump(longInput))
         {
             foreach (byte index in Hidpp.CandidateDevices(longReports.ProductId)) _toProbe.Add(index);
@@ -177,7 +185,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
 
             case HidppEvent.Feature feature when _devices.TryGetValue(feature.Device, out HidppDevice? device)
                 && feature.FeatureIndex == device.BatteryIndex && feature.Function == 0:
-                Apply(device, Hidpp.ParseBattery(device.BatteryFeature, feature.Parameters, device.PercentSupported));
+                Apply(device, Hidpp.ParseBattery(device.BatteryFeature, feature.Parameters, device.PercentSupported, ProductOf(device)));
                 break;
         }
     }
@@ -187,6 +195,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
     {
         // Root.GetProtocolVersion: a HID++ 2.0 device answers with its version; an empty slot or a device that is off returns an error.
         HidppReply? version = await RequestAsync(index, 0, 1, cancellation, 0, 0, 0x5A).ConfigureAwait(false);
+        if (version is HidppReply { Error: Hidpp.ErrorInvalidSubId }) return await ProbeLegacyAsync(index, cancellation).ConfigureAwait(false);
         if (version is not HidppReply v || v.IsError || v.Parameters[0] < 2) return false;
 
         ushort feature = 0;
@@ -224,8 +233,65 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
         return true;
     }
 
+    /// <summary>
+    /// A device that answered the HID++ 2.0 ping with "invalid sub id" speaks HID++ 1.0 (older Unifying mice and keyboards).
+    /// Its battery is a register: 0x0D with a percent, or 0x07 with a coarse level. Register facts as Solaar reads them.
+    /// </summary>
+    private async Task<bool> ProbeLegacyAsync(byte index, CancellationToken cancellation)
+    {
+        if (_shortOutput == null) return true;
+        foreach (byte register in new[] { Hidpp.RegisterBatteryCharge, Hidpp.RegisterBatteryStatus })
+        {
+            if (await RegisterAsync(index, register, cancellation).ConfigureAwait(false) is not HidppReply { IsError: false } reply) continue;
+            if (Hidpp.ParseRegisterBattery(register, reply.Parameters) == null) continue;
+
+            string id = $"logi:{longReports.ProductId:X4}:{index}";
+            var descriptor = new DeviceDescriptor(id, naming.Resolve(id, Hidpp.KindName(DeviceKind.Other)), DeviceKind.Other);
+            // Feature index 0xFF never appears in a notification, so no HID++ 2.0 battery event is taken for this device's.
+            var device = new HidppDevice(index, descriptor, 0xFF, 0, false, register);
+            _devices[index] = device;
+            store.Connect(descriptor);
+            Log.Info($"{Name}: found a HID++ 1.0 device [{id}], battery register {register:X2}.");
+            Apply(device, Hidpp.ParseRegisterBattery(register, reply.Parameters));
+            return true;
+        }
+        Log.Info($"{Name}: HID++ 1.0 device {index} has no battery register.");
+        return true;
+    }
+
+    /// <summary>Reads a HID++ 1.0 register through the short-report collection.</summary>
+    private async Task<HidppReply?> RegisterAsync(byte device, byte register, CancellationToken cancellation)
+    {
+        try
+        {
+            _shortOutput!.Write(Hidpp.RegisterRead(device, register));
+        }
+        catch (Win32Exception exception)
+        {
+            Log.Warn($"{Name}: register read on device {device} failed ({exception.Message}).");
+            return null;
+        }
+
+        DateTime until = DateTime.UtcNow + ReplyTimeout;
+        while (DateTime.UtcNow < until)
+        {
+            byte[]? report = await _pump!.NextAsync(until - DateTime.UtcNow, cancellation).ConfigureAwait(false);
+            if (report == null) break;
+            if (Hidpp.MatchRegisterReply(report, device, register) is HidppReply reply) return reply;
+        }
+        return null;
+    }
+
     private async Task ReadBatteryAsync(HidppDevice device, CancellationToken cancellation)
     {
+        if (device.LegacyRegister != 0)
+        {
+            HidppReply? legacy = await RegisterAsync(device.Index, device.LegacyRegister, cancellation).ConfigureAwait(false);
+            if (legacy is HidppReply { IsError: false } l) Apply(device, Hidpp.ParseRegisterBattery(device.LegacyRegister, l.Parameters));
+            else store.Report(device.Descriptor.Id, new DeviceReport.Asleep());
+            return;
+        }
+
         HidppReply? reply = await RequestAsync(device.Index, device.BatteryIndex, Hidpp.BatteryFunction(device.BatteryFeature), cancellation).ConfigureAwait(false);
         if (reply is not HidppReply r || r.IsError)
         {
@@ -233,8 +299,11 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
             store.Report(device.Descriptor.Id, new DeviceReport.Asleep());
             return;
         }
-        Apply(device, Hidpp.ParseBattery(device.BatteryFeature, r.Parameters, device.PercentSupported));
+        Apply(device, Hidpp.ParseBattery(device.BatteryFeature, r.Parameters, device.PercentSupported, ProductOf(device)));
     }
+
+    /// <summary>Product id for a device connected directly (a headset on its own receiver); receivers carry many products.</summary>
+    private ushort ProductOf(HidppDevice device) => device.Index == Hidpp.DirectDevice ? longReports.ProductId : (ushort)0;
 
     private void Apply(HidppDevice device, HidppBattery? battery)
     {
@@ -305,7 +374,7 @@ internal sealed class HidppSession(DeviceStore store, DeviceNaming naming, HidCo
                 if (Hidpp.ParseEvent(report) is HidppEvent.Feature feature && _devices.TryGetValue(feature.Device, out HidppDevice? known)
                     && feature.FeatureIndex == known.BatteryIndex && feature.Function == 0)
                 {
-                    Apply(known, Hidpp.ParseBattery(known.BatteryFeature, feature.Parameters, known.PercentSupported));
+                    Apply(known, Hidpp.ParseBattery(known.BatteryFeature, feature.Parameters, known.PercentSupported, ProductOf(known)));
                 }
             }
         }

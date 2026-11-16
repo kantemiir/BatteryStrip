@@ -36,8 +36,12 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
 
         if (devices.Count == 0)
         {
-            GlyphMask empty = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), Text.Current.NoDevices, (int)(right - left), !palette.IsLight);
-            surface.DrawMask(empty, (int)left, (int)Math.Round(y + (rowHeight - empty.Height) / 2), palette.SecondaryText);
+            // Laid out like a device row, with the way to report an unsupported device under the title.
+            GlyphMask title = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), Text.Current.NoDevices, (int)(right - left), !palette.IsLight);
+            GlyphMask hint = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), Text.Current.NoDevicesHint, (int)(right - left), !palette.IsLight);
+            float top = (float)Math.Round(y + (rowHeight - title.Height - hint.Height) / 2);
+            surface.DrawMask(title, (int)left, (int)top, palette.Text);
+            surface.DrawMask(hint, (int)left, (int)top + title.Height, palette.SecondaryText);
             y += rowHeight;
             Divider(surface, palette, left, right, y);
         }
@@ -68,12 +72,13 @@ internal sealed class FlyoutPainter(GlyphCache glyphs, StripPainter batteries)
         float middle = top + height / 2;
         batteries.PaintIcon(surface, device, palette, IconFont * scale, left, middle, IconBox * scale);
 
-        float batteryWidth = batteries.BatteryWidth(device, scale);
-        float batteryLeft = right - batteryWidth;
-        batteries.PaintBattery(surface, device, palette, scale, batteryLeft, middle);
+        // Every battery sits in one right-hand column; a charging bolt goes to its left rather than pushing it.
+        float batteryLeft = right - batteries.PlainBatteryWidth(scale);
+        batteries.PaintBattery(surface, device, palette, scale, batteryLeft, middle, boltBefore: true);
+        float batteryArea = batteryLeft - (StripPainter.ShowsBolt(device) ? batteries.BoltSpace(scale) : 0);
 
         float textLeft = left + (IconBox + IconGap) * scale;
-        int textWidth = (int)(batteryLeft - TextGap * scale - textLeft);
+        int textWidth = (int)(batteryArea - TextGap * scale - textLeft);
         GlyphMask name = glyphs.GetLine(GlyphFont.Body, Px(NameFont, scale), device.Name, textWidth, !palette.IsLight);
         GlyphMask status = glyphs.GetLine(GlyphFont.Body, Px(StatusFont, scale), StatusText.For(device, utcNow), textWidth, !palette.IsLight);
         float textTop = (float)Math.Round(middle - (name.Height + status.Height) / 2f);

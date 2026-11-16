@@ -18,8 +18,15 @@ internal static class Installer
 
     public static string InstalledExe => Path.Combine(AppInfo.InstallDirectory, AppInfo.ExeName);
 
-    private static string ShortcutPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppInfo.DisplayName + ".lnk");
+    private static string ShortcutPath => ShortcutFor(AppInfo.DisplayName);
+
+    /// <summary>The shortcut is named in the interface language; one made under the other language is cleaned up.</summary>
+    private static string ShortcutFor(string name) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), name + ".lnk");
+
+    private static string[] AllShortcuts => [ShortcutFor(Strings.Russian.AppName), ShortcutFor(Strings.English.AppName)];
+
+    /// <summary>Where a self-update downloads the new version; removed once it has been installed.</summary>
+    public static string UpdateFolder => Path.Combine(Path.GetTempPath(), "BatteryStrip-update");
 
     /// <summary>True when this process runs from the install folder.</summary>
     public static bool IsRunningInstalled =>
@@ -31,8 +38,11 @@ internal static class Installer
     public static int RunInteractive(Settings settings)
     {
         string? installedVersion = IsInstalled ? FileVersionInfo.GetVersionInfo(InstalledExe).ProductVersion : null;
-        string question = installedVersion == null
-            ? Text.Current.InstallQuestion(AppInfo.Version)
+        int order = AppVersion.Parse(installedVersion) is AppVersion installed && AppVersion.Parse(AppInfo.Version) is AppVersion mine
+            ? mine.CompareTo(installed) : 1;
+        string question = installedVersion == null ? Text.Current.InstallQuestion(AppInfo.Version)
+            : order == 0 ? Text.Current.ReinstallQuestion(AppInfo.Version)
+            : order < 0 ? Text.Current.DowngradeQuestion(installedVersion, AppInfo.Version)
             : Text.Current.UpdateQuestion(installedVersion, AppInfo.Version);
 
         if (!Dialogs.Confirm(question)) return 1;
@@ -41,9 +51,11 @@ internal static class Installer
         {
             Install();
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
         {
+            // The running copy may already be stopped: bring the installed one back, then say what went wrong.
             Log.Error("Install failed", exception);
+            if (IsInstalled) StartInstalled();
             Dialogs.Error(Text.Current.InstallFailed(exception.Message));
             return 2;
         }
@@ -62,15 +74,28 @@ internal static class Installer
     {
         StopRunningCopy();
         Directory.CreateDirectory(AppInfo.InstallDirectory);
+        bool fresh = !File.Exists(InstalledExe);
 
-        // Copy to a temporary name first, so a failure never leaves a half-written exe.
+        // Copy to a temporary name first, so a failure never leaves a half-written exe. The bytes are copied
+        // through a stream: File.Copy would carry the "downloaded from the internet" mark to the installed file,
+        // and Windows would warn about it again at every start.
         string temporary = InstalledExe + ".new";
-        File.Copy(AppInfo.ExePath, temporary, overwrite: true);
+        using (FileStream source = File.OpenRead(AppInfo.ExePath))
+        using (FileStream target = File.Create(temporary))
+        {
+            source.CopyTo(target);
+        }
         if (File.Exists(InstalledExe)) File.Replace(temporary, InstalledExe, null);
         else File.Move(temporary, InstalledExe);
 
+        foreach (string other in AllShortcuts)
+        {
+            if (!string.Equals(other, ShortcutPath, StringComparison.OrdinalIgnoreCase)) TryDelete(() => File.Delete(other));
+        }
         Shortcut.Create(ShortcutPath, InstalledExe, AppInfo.DisplayName, AppInfo.Id);
-        Autostart.Set(true, InstalledExe);
+
+        // A new install starts with Windows; an update keeps what the user chose.
+        if (fresh || Autostart.IsEnabled) Autostart.Set(true, InstalledExe);
         RegisterUninstall();
         Log.Info($"Installed {AppInfo.Version} to {AppInfo.InstallDirectory}.");
     }
@@ -83,7 +108,8 @@ internal static class Installer
         StopRunningCopy();
         Autostart.Set(false, InstalledExe);
         Notifier.Unregister();
-        TryDelete(() => File.Delete(ShortcutPath));
+        foreach (string shortcut in AllShortcuts) TryDelete(() => File.Delete(shortcut));
+        TryDelete(() => { if (Directory.Exists(UpdateFolder)) Directory.Delete(UpdateFolder, recursive: true); });
         TryDelete(() => Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false));
         RemoveTrayIconSettings();
 
@@ -91,11 +117,12 @@ internal static class Installer
         Log.Start(Path.GetTempPath());
         TryDelete(() => Directory.Delete(AppInfo.DataDirectory, recursive: true));
 
+        // The message comes first: while it is open this exe is still running and its folder cannot be removed.
+        if (!quiet) Dialogs.Info(Text.Current.Uninstalled);
+
         // A running exe cannot delete itself; a short-lived command does it once this process has exited.
         if (IsRunningInstalled) ScheduleFolderRemoval(AppInfo.InstallDirectory);
         else TryDelete(() => Directory.Delete(AppInfo.InstallDirectory, recursive: true));
-
-        if (!quiet) Dialogs.Info(Text.Current.Uninstalled);
         return 0;
     }
 
@@ -153,7 +180,10 @@ internal static class Installer
 
     private static void ScheduleFolderRemoval(string folder)
     {
-        var command = new ProcessStartInfo("cmd.exe", $"/c ping 127.0.0.1 -n 3 >nul & rd /s /q \"{folder}\"")
+        // Waits about two seconds for this process to exit, then tries a few more times in case it is slow to.
+        string remove = $"rd /s /q \"{folder}\"";
+        var command = new ProcessStartInfo("cmd.exe",
+            $"/c ping 127.0.0.1 -n 3 >nul & {remove} 2>nul & if exist \"{folder}\" (ping 127.0.0.1 -n 4 >nul & {remove} 2>nul) & if exist \"{folder}\" (ping 127.0.0.1 -n 8 >nul & {remove})")
         {
             CreateNoWindow = true,
             UseShellExecute = false,

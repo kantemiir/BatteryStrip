@@ -55,7 +55,10 @@ internal sealed class PnpDevice
 internal static class Pnp
 {
     /// <summary>Present device nodes created by one bus enumerator (for example "BTHENUM"), with the requested properties.</summary>
-    public static IReadOnlyList<PnpDevice> List(string enumerator, IReadOnlyList<DevicePropertyKey> keys)
+    /// <param name="details">More properties, read only for nodes that <paramref name="wanted"/> accepts after the first ones:
+    /// most nodes of a bus are services and profiles that never match.</param>
+    public static IReadOnlyList<PnpDevice> List(string enumerator, IReadOnlyList<DevicePropertyKey> keys,
+        Func<PnpDevice, bool>? wanted = null, IReadOnlyList<DevicePropertyKey>? details = null)
     {
         var devices = new List<PnpDevice>();
         IntPtr set = SetupDiGetClassDevs(IntPtr.Zero, enumerator, IntPtr.Zero, DigcfAllClasses | DigcfPresent);
@@ -69,6 +72,11 @@ internal static class Pnp
                 if (!SetupDiGetDeviceInstanceId(set, ref info, id, id.Capacity, out _)) continue;
                 var device = new PnpDevice(id.ToString());
                 foreach (DevicePropertyKey key in keys)
+                {
+                    if (Read(set, ref info, key) is (int type, byte[] data)) device.Set(key, type, data);
+                }
+                if (wanted != null && !wanted(device)) continue;
+                foreach (DevicePropertyKey key in details ?? Array.Empty<DevicePropertyKey>())
                 {
                     if (Read(set, ref info, key) is (int type, byte[] data)) device.Set(key, type, data);
                 }

@@ -99,14 +99,17 @@ internal sealed class Surface(int width, int height)
     }
 
     /// <summary>Paints a glyph mask in one colour with its top-left corner at (<paramref name="left"/>, <paramref name="top"/>).</summary>
-    public void DrawMask(GlyphMask mask, int left, int top, Rgba color)
+    /// <param name="clip">Only the part of the mask inside this box is painted.</param>
+    public void DrawMask(GlyphMask mask, int left, int top, Rgba color, RectF? clip = null)
     {
         for (int y = Math.Max(0, top); y < Math.Min(Height, top + mask.Height); y++)
         {
             for (int x = Math.Max(0, left); x < Math.Min(Width, left + mask.Width); x++)
             {
                 byte coverage = mask.At(x - left, y - top);
-                if (coverage != 0) Composite(x, y, color, coverage / 255f, 1f);
+                if (coverage == 0) continue;
+                float kept = clip is RectF c ? BoxCoverage(x, y, c) : 1f;
+                if (kept > 0) Composite(x, y, color, coverage / 255f * kept, 1f);
             }
         }
     }

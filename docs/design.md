@@ -8,7 +8,8 @@ Windows 11 has no API for taskbar extensions (DeskBands are gone). BatteryStrip 
 - A layered (`WS_EX_LAYERED`) window with per-pixel alpha, created as a pop-up and re-parented with `SetParent`.
   A layered *child* window needs the Windows 8+ `supportedOS` entry in the manifest.
 - Placed 8 px left of `TrayNotifyWnd`. Its position is re-read before every layout, followed in real time through a
-  `EVENT_OBJECT_LOCATIONCHANGE` WinEvent hook on Explorer, and checked every 2 s by a watchdog.
+  `EVENT_OBJECT_LOCATIONCHANGE` WinEvent hook on the taskbar's own thread, and checked every 5 s by a watchdog
+  (which also puts the strip back on top if Explorer raised its XAML layer over it).
 - Re-attached on `TaskbarCreated` (Explorer restart) and after resume. `SetParent` is verified by reading the parent
   back; a window stuck to a dead taskbar is destroyed and recreated.
 - Fully transparent pixels get alpha 1, so the whole strip is clickable while staying invisible.
@@ -27,10 +28,12 @@ Windows 10 the legacy `MSTaskSwWClass` window gives it directly.
 A small software canvas (`Surface`) in premultiplied BGRA. Shapes are antialiased analytically; glyphs come from
 DirectWrite through a Direct2D DC render target as coverage masks (grayscale antialiasing, as on the taskbar).
 
-The battery follows the iPhone: a solid body (the empty part in the text colour at about half opacity, the filled part
-in the level colour) with the number cut out of both parts, so the number is one colour whatever the level; with a
-plain number on top, the edge of the fill used to split digits into two colours. A sleeping device or one without
-data is a hollow outline instead. The charging bolt is a small vector shape beside the battery (8×8 supersampled),
+The number sits on a soft rounded plate with no outline (chosen by the user on 2026-11-17, after the digits of the
+outlined battery proved hard to read: a digit the edge of the cut-out fill crossed split into a dark and a white half).
+The plate is the text colour at about 10 % opacity; the charge is the same plate again at 24 % up to a whole-pixel edge,
+and the 14 px bold number is drawn over both in one solid colour, so no digit is ever split. Warning fills use Windows 11's
+caution and critical colours at full strength; they end at 20 %, before the digits (a test guards this).
+A sleeping device is a bare plate with a dim number; a device without data shows a dash. The charging bolt is a small vector shape beside the plate (8×8 supersampled),
 not a font glyph. Fonts: Segoe UI Variable and Segoe Fluent Icons. The flyout runs on its own thread and uses the
 same painter; the strip repaints only when something visible changed. Pop-up menus follow the taskbar's light or
 dark mode through uxtheme's `SetPreferredAppMode`.
@@ -57,7 +60,9 @@ Protocol details and the hardware tests behind them: [research/devices.md](../re
 ## Resource use
 
 Idle CPU is close to zero: no polling timers on the strip's thread, device sessions sleep between reads, the
-G435 samples audio state every 2 s only while waiting for a quiet moment. About 30–35 MB private memory.
+G435 samples audio state every 2 s only while waiting for a quiet moment (every 6 s after a minute of playback, not at
+all during a full-screen game). A reading that changes nothing visible wakes no window. UI Automation is called through
+its COM API and fonts are listed through DirectWrite, so neither WPF nor GDI+ is loaded.
 
 The thread pool starts and retires threads around timers and device replies; a retired thread keeps its handle and a
 few events until its `Thread` object is finalized, and the app allocates too little for the garbage collector to run

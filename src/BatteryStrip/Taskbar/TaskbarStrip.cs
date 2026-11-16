@@ -17,13 +17,16 @@ namespace BatteryStrip.Taskbar;
 /// </summary>
 internal sealed class TaskbarStrip : IDisposable
 {
-    /// <summary>Gap between the strip and the notification area, at 100 % scale.</summary>
-    private const float TrayGap = 8;
+    /// <summary>Gap between the strip's window and the notification area, at 100 % scale. The window keeps
+    /// <see cref="StripPainter.HoverPad"/> of room at each end for the hover plate, so the visible gap is 8.</summary>
+    private const float TrayGap = 8 - StripPainter.HoverPad;
 
-    /// <summary>Space kept free between the last app button and the strip, at 100 % scale.</summary>
-    private const float AppGap = 8;
+    /// <summary>Space kept free between the last app button and the strip's window, at 100 % scale.</summary>
+    private const float AppGap = 8 - StripPainter.HoverPad;
 
-    private const int WatchdogMs = 2000;
+    /// <summary>The location hook, TaskbarCreated and the resume broadcast catch nearly everything at once; the
+    /// watchdog is the safety net, and every tick wakes the process.</summary>
+    private const int WatchdogMs = 5000;
     private const int LayoutDelayMs = 50;
 
     /// <summary>After this long without a working attachment the strip reports itself broken.</summary>
@@ -33,6 +36,8 @@ internal sealed class TaskbarStrip : IDisposable
     private static readonly IntPtr LayoutTimer = new(2);
     private const int WM_DEVICES_CHANGED = User32.WM_APP + 1;
     private const int WM_TASKLIST_CHANGED = User32.WM_APP + 2;
+    private const int WM_ATTACH = User32.WM_APP + 3;
+    private const int WM_SHOW = User32.WM_APP + 4;
 
     private readonly DeviceStore _store;
     private readonly GlyphCache _glyphs = new();
@@ -41,11 +46,13 @@ internal sealed class TaskbarStrip : IDisposable
     private readonly int _taskbarCreatedMessage = User32.RegisterWindowMessage("TaskbarCreated");
     private readonly User32.WinEventProc _winEventProc; // kept alive while the hook exists
     private readonly TaskListWatcher _taskList = new();
+    private readonly StripTooltip _tooltip;
 
     private StripWindow? _strip;
     private TaskbarPlace? _place;
     private IntPtr _locationHook;
     private uint _hookedProcess;
+    private uint _hookedThread;
     private Palette _palette = Theme.Current();
     private StripImage? _image;
     private string? _shownKey;
@@ -54,6 +61,7 @@ internal sealed class TaskbarStrip : IDisposable
     private bool _reportedBroken;
     private bool _fits = true;
     private string? _lastProblem;
+    private string? _hovered;
 
     /// <summary>A device on the strip was clicked; the argument is its id, or null for a click between devices.</summary>
     public event Action<string?>? DeviceClicked;
@@ -73,6 +81,18 @@ internal sealed class TaskbarStrip : IDisposable
     /// <summary>The taskbar was recreated or the computer woke up: device lists may be stale too.</summary>
     public event Action? EnvironmentChanged;
 
+    /// <summary>Windows is about to log off or shut down; the process may be ended without a normal exit.</summary>
+    public event Action? SessionEnding;
+
+    /// <summary>
+    /// The program was started again (from the Start menu) while running: the flyout should open, even when no
+    /// device is shown and the strip is hidden. The argument is where to open it, in screen pixels.
+    /// </summary>
+    public event Action<User32.RECT>? ShowRequested;
+
+    /// <summary>Asks for <see cref="ShowRequested"/> on the strip's thread. Safe from any thread.</summary>
+    public void RequestShow() => User32.PostMessage(_broadcasts.Handle, WM_SHOW, IntPtr.Zero, IntPtr.Zero);
+
     /// <summary>Screen rectangle of the strip, for placing the flyout above it.</summary>
     public User32.RECT? ScreenBounds =>
         _strip != null && _strip.Handle != IntPtr.Zero && User32.GetWindowRect(_strip.Handle, out User32.RECT rect) ? rect : null;
@@ -90,17 +110,23 @@ internal sealed class TaskbarStrip : IDisposable
         _painter = new StripPainter(_glyphs);
         _winEventProc = OnWinEvent;
         _broadcasts.Message += OnBroadcast;
+        _tooltip = new StripTooltip(_broadcasts.Handle);
+        _tooltip.SetDark(!_palette.IsLight);
         _store.Changed += () => User32.PostMessage(_broadcasts.Handle, WM_DEVICES_CHANGED, IntPtr.Zero, IntPtr.Zero);
         _taskList.Changed += () => User32.PostMessage(_broadcasts.Handle, WM_TASKLIST_CHANGED, IntPtr.Zero, IntPtr.Zero);
         User32.SetTimer(_broadcasts.Handle, WatchdogTimer, WatchdogMs, IntPtr.Zero);
         _devices = _store.Snapshot;
-        Attach("start");
+
+        // Attached from the message loop: once the strip is a child of the taskbar, this thread shares Explorer's
+        // input queue, and the rest of start-up (other windows, device sources) must not run while it does not pump.
+        User32.PostMessage(_broadcasts.Handle, WM_ATTACH, IntPtr.Zero, IntPtr.Zero);
     }
 
     public void Dispose()
     {
         User32.KillTimer(_broadcasts.Handle, WatchdogTimer);
         _taskList.Dispose();
+        _tooltip.Dispose();
         Unhook();
         _strip?.Dispose();
         _broadcasts.Dispose();
@@ -129,6 +155,18 @@ internal sealed class TaskbarStrip : IDisposable
                 Render();
                 return true;
 
+            case WM_ATTACH:
+                Attach("start");
+                return true;
+
+            case WM_SHOW:
+                ShowRequested?.Invoke(ShowAnchor());
+                return true;
+
+            case User32.WM_QUERYENDSESSION:
+                SessionEnding?.Invoke();
+                return false;
+
             case User32.WM_TIMER when wParam == WatchdogTimer:
                 Watchdog();
                 return true;
@@ -145,6 +183,7 @@ internal sealed class TaskbarStrip : IDisposable
                     if (palette != _palette)
                     {
                         _palette = palette;
+                        _tooltip.SetDark(!palette.IsLight);
                         Log.Info($"Theme changed to {(palette.IsLight ? "light" : "dark")}.");
                         Render();
                     }
@@ -178,6 +217,13 @@ internal sealed class TaskbarStrip : IDisposable
             return;
         }
 
+        // After Explorer was killed the old strip window can be dead without having seen WM_DESTROY.
+        if (_strip != null && _strip.Handle != IntPtr.Zero && !User32.IsWindow(_strip.Handle))
+        {
+            _strip.Dispose();
+            _strip = null;
+        }
+
         if (_strip == null || _strip.Handle == IntPtr.Zero)
         {
             _strip = new StripWindow();
@@ -187,11 +233,17 @@ internal sealed class TaskbarStrip : IDisposable
                 if (User32.GetCursorPos(out User32.POINT cursor)) ContextMenuRequested?.Invoke(cursor.X, cursor.Y);
             };
             _strip.Destroyed += () => Log.Info("The strip window was destroyed; it will be recreated.");
+            _strip.Hover += (x, _) => SetHovered(DeviceAt(x));
+            _strip.HoverEnd += () => SetHovered(null);
         }
 
         IntPtr hwnd = _strip.Handle;
         if (User32.GetParent(hwnd) != place.Taskbar)
         {
+            // The first picture loads DirectWrite and the font list, which can take a while on a cold start:
+            // do it now, before this thread is joined to the taskbar's input queue.
+            if (_devices.Count > 0) _painter.Paint(_devices, _palette, place.Scale, place.Height, compact: false);
+
             long style = (long)User32.GetWindowLongPtr(hwnd, User32.GWL_STYLE);
             style = (style & ~0x80000000L) | User32.WS_CHILD | User32.WS_CLIPSIBLINGS;
             User32.SetWindowLongPtr(hwnd, User32.GWL_STYLE, new IntPtr(style));
@@ -258,14 +310,14 @@ internal sealed class TaskbarStrip : IDisposable
         SetFits(true);
 
         // A new reading with the same look (same percent, same state) needs no new picture, and most readings are such.
-        string key = VisualKey(_devices, _palette, place, compact);
+        string key = VisualKey(_devices, _palette, place, compact) + "|" + _hovered;
         if (key == _shownKey && _image != null && User32.IsWindowVisible(hwnd) && IsWhereExpected(place))
         {
             MarkHealthy();
             return;
         }
 
-        StripImage image = _painter.Paint(_devices, _palette, place.Scale, place.Height, compact);
+        StripImage image = _painter.Paint(_devices, _palette, place.Scale, place.Height, compact, _hovered);
         int width = image.Surface.Width;
         int x = right - width;
 
@@ -283,7 +335,25 @@ internal sealed class TaskbarStrip : IDisposable
         }
         _image = image;
         _shownKey = key;
+        _tooltip.SetSlots(hwnd, image.Slots);
         MarkHealthy();
+    }
+
+    /// <summary>The mouse moved onto another device (or off the strip): light its plate and refresh its tooltip text.</summary>
+    private void SetHovered(string? id)
+    {
+        if (id == _hovered) return;
+        _hovered = id;
+        if (id != null)
+        {
+            foreach (DeviceSnapshot device in _devices)
+            {
+                if (device.Id != id) continue;
+                string charge = device.Percent is int percent ? Text.Current.Percent(percent) : Text.Current.NoData;
+                _tooltip.SetText(id, $"{device.Name}: {charge}\n{StatusText.For(device, DateTime.UtcNow)}");
+            }
+        }
+        Render();
     }
 
     /// <summary>Everything the strip's picture depends on; equal keys give equal pictures.</summary>
@@ -322,7 +392,29 @@ internal sealed class TaskbarStrip : IDisposable
             || place.Dpi != _place.Dpi || !IsWhereExpected(place)))
         {
             Render();
+            return;
         }
+
+        // Explorer can raise its own content (the XAML layer covers the whole taskbar) above the strip, which then
+        // looks healthy but is hidden: bring it back on top of its siblings.
+        IntPtr hwnd = _strip!.Handle;
+        if (User32.IsWindowVisible(hwnd) && User32.GetWindow(hwnd, User32.GW_HWNDPREV) != IntPtr.Zero)
+            User32.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);
+        MarkHealthy();
+    }
+
+    /// <summary>The strip when it is shown; otherwise the spot just left of the notification area, where it would be.</summary>
+    private User32.RECT ShowAnchor()
+    {
+        if (_strip != null && _strip.Handle != IntPtr.Zero && User32.IsWindowVisible(_strip.Handle)
+            && User32.GetWindowRect(_strip.Handle, out User32.RECT strip)) return strip;
+        if (TaskbarLocator.Find(out _) is TaskbarPlace place)
+        {
+            int x = place.TaskbarRect.Left + place.TrayLeft;
+            return new User32.RECT { Left = x, Right = x, Top = place.TaskbarRect.Top, Bottom = place.TaskbarRect.Bottom };
+        }
+        User32.GetCursorPos(out User32.POINT cursor);
+        return new User32.RECT { Left = cursor.X, Right = cursor.X, Top = cursor.Y, Bottom = cursor.Y };
     }
 
     private bool IsWhereExpected(TaskbarPlace place)
@@ -345,12 +437,16 @@ internal sealed class TaskbarStrip : IDisposable
     /// <summary>Follows moves of the notification area as they happen, instead of waiting for the watchdog.</summary>
     private void Hook(IntPtr taskbar)
     {
-        User32.GetWindowThreadProcessId(taskbar, out uint process);
-        if (process == _hookedProcess && _locationHook != IntPtr.Zero) return;
+        // Only the taskbar's own thread: File Explorer windows live in the same process, and moving or scrolling
+        // them would otherwise call this thread hundreds of times a second. A taskbar gone since Find hooks nothing.
+        uint thread = User32.GetWindowThreadProcessId(taskbar, out uint process);
+        if (process == 0 || thread == 0) return;
+        if (process == _hookedProcess && thread == _hookedThread && _locationHook != IntPtr.Zero) return;
         Unhook();
         _locationHook = User32.SetWinEventHook(User32.EVENT_OBJECT_LOCATIONCHANGE, User32.EVENT_OBJECT_LOCATIONCHANGE,
-            IntPtr.Zero, _winEventProc, process, 0, User32.WINEVENT_OUTOFCONTEXT | User32.WINEVENT_SKIPOWNPROCESS);
+            IntPtr.Zero, _winEventProc, process, thread, User32.WINEVENT_OUTOFCONTEXT | User32.WINEVENT_SKIPOWNPROCESS);
         _hookedProcess = process;
+        _hookedThread = thread;
     }
 
     private void Unhook()
@@ -358,6 +454,7 @@ internal sealed class TaskbarStrip : IDisposable
         if (_locationHook != IntPtr.Zero) User32.UnhookWinEvent(_locationHook);
         _locationHook = IntPtr.Zero;
         _hookedProcess = 0;
+        _hookedThread = 0;
     }
 
     private void OnWinEvent(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)

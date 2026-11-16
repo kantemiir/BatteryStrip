@@ -63,12 +63,23 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     private static readonly TimeSpan SlowRetry = TimeSpan.FromMinutes(1);
     private const int MaxRetries = 3;
 
+    /// <summary>When the receiver is found in service mode, another program may be updating it: wait this long, and
+    /// take over (leave service mode ourselves) only after this many such visits in a row.</summary>
+    private static readonly TimeSpan BusyRetry = TimeSpan.FromMinutes(5);
+    private const int BusyVisitsBeforeTakeOver = 3;
+
     /// <summary>After waking from sleep the receiver needs a moment before it answers reliably.</summary>
     private static readonly TimeSpan SettleAfterResume = TimeSpan.FromSeconds(20);
 
     /// <summary>How often the audio state is sampled while waiting for silence. The gate needs 10–20 s of quiet,
     /// so two seconds lose nothing and halve the work while music plays for hours.</summary>
     private static readonly TimeSpan AudioPoll = TimeSpan.FromSeconds(2);
+
+    /// <summary>After a minute of continuous playback (music for hours is common) the audio is sampled this often.
+    /// The gate still sees a pause within a few seconds of its start, and the program wakes less.</summary>
+    private static readonly TimeSpan SlowAudioPoll = TimeSpan.FromSeconds(6);
+
+    private static readonly TimeSpan SlowPollAfter = TimeSpan.FromMinutes(1);
 
     /// <summary>Audio playing into a headset believed to be off for this long means it is probably on.</summary>
     private static readonly TimeSpan BusyMeansOn = TimeSpan.FromSeconds(20);
@@ -82,6 +93,11 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
     private DateTime _notBefore = DateTime.MinValue;
     private bool _shown;
     private bool _believedOff;
+
+    /// <summary>False until a read of ours has left service mode cleanly: a receiver found in service mode before
+    /// that was most likely left there by an interrupted read of ours (the program was killed mid-read).</summary>
+    private bool _lastExitConfirmed;
+    private int _busyVisits;
 
     protected override string Name => "G435";
 
@@ -137,6 +153,13 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
                     pause = OffCheckInterval;
                     break;
 
+                case G435Reading.Busy:
+                    _busyVisits++;
+                    Log.Warn($"G435: the receiver is already in service mode (another program?); left alone ({_busyVisits}).");
+                    if (_shown) store.Report(descriptor.Id, new DeviceReport.Stale(NoAnswerNote));
+                    pause = BusyRetry;
+                    break;
+
                 default:
                     failures++;
                     pause = failures == 1 ? QuickRetry : failures <= MaxRetries ? SlowRetry : ReadInterval;
@@ -169,9 +192,18 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
             }
 
             DateTime now = DateTime.UtcNow;
+
+            // A full-screen game or video: no read is allowed anyway, so Windows audio is not asked either.
+            if (FullScreen.IsActive())
+            {
+                gate.Reset();
+                await _wake.WaitAsync(SlowAudioPoll, cancellation).ConfigureAwait(false);
+                continue;
+            }
+
             AudioState? state = audio.Sample();
             bool quiet = gate.Observe(state, now);
-            if (quiet && now >= _notBefore && !FullScreen.IsActive()) return false;
+            if (quiet && now >= _notBefore) return false;
 
             // While it cannot be asked, a headset that is being played to is shown with its last known charge.
             bool busy = state is not AudioState s || s.HasOpenStreams;
@@ -183,7 +215,8 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
                 store.Report(descriptor.Id, new DeviceReport.Stale(WaitingNote));
             }
 
-            await _wake.WaitAsync(AudioPoll, cancellation).ConfigureAwait(false);
+            bool longBusy = busySince is DateTime start && now - start >= SlowPollAfter;
+            await _wake.WaitAsync(longBusy ? SlowAudioPoll : AudioPoll, cancellation).ConfigureAwait(false);
         }
     }
 
@@ -194,7 +227,13 @@ internal sealed class G435Session(DeviceStore store, DeviceDescriptor descriptor
         if (input == null || feature == null) return new G435Reading.Failed("cannot open the receiver");
 
         var bridge = new G435Bridge(feature, input);
-        G435Reading reading = await bridge.ReadBatteryAsync().ConfigureAwait(false);
+        bool mayTakeOver = !_lastExitConfirmed || _busyVisits >= BusyVisitsBeforeTakeOver;
+        G435Reading reading = await bridge.ReadBatteryAsync(mayTakeOver).ConfigureAwait(false);
+        if (reading is not G435Reading.Busy)
+        {
+            _busyVisits = 0;
+            _lastExitConfirmed = bridge.ExitConfirmed;
+        }
         if (reading is G435Reading.Failed failed)
             Log.Warn($"G435: read failed ({failed.Reason}){(forced ? " (asked by the user)" : "")}. Exchange:{Environment.NewLine}{bridge.Transcript}");
         return reading;

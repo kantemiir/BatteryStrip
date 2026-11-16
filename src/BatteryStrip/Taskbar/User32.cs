@@ -20,7 +20,7 @@ internal static class User32
     public const uint SWP_SHOWWINDOW = 0x0040, SWP_HIDEWINDOW = 0x0080;
     public const int SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
 
-    public const int WM_DESTROY = 0x0002, WM_CLOSE = 0x0010, WM_SETTINGCHANGE = 0x001A, WM_TIMER = 0x0113;
+    public const int WM_DESTROY = 0x0002, WM_CLOSE = 0x0010, WM_QUERYENDSESSION = 0x0011, WM_SETTINGCHANGE = 0x001A, WM_TIMER = 0x0113;
     public const int WM_DISPLAYCHANGE = 0x007E, WM_DPICHANGED = 0x02E0, WM_POWERBROADCAST = 0x0218;
     public const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202, WM_RBUTTONUP = 0x0205, WM_MOUSELEAVE = 0x02A3;
     public const int WM_MOUSEACTIVATE = 0x0021, MA_NOACTIVATE = 3;
@@ -155,6 +155,11 @@ internal static class User32
 
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hwnd);
+
+    public const uint GW_HWNDPREV = 3;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hwnd);

@@ -40,7 +40,8 @@ internal static class Preview
             {
                 foreach (IReadOnlyList<DeviceSnapshot> row in rows)
                 {
-                    StripImage image = painter.Paint(row, palette, scale, (int)Math.Round(48 * scale));
+                    // The first row shows the hover plate on the headset.
+                    StripImage image = painter.Paint(row, palette, scale, (int)Math.Round(48 * scale), hoveredId: row == rows[0] ? "h" : null);
                     images.Add((palette, taskbar, image));
                     totalWidth = Math.Max(totalWidth, image.Surface.Width + 2 * pad);
                     totalHeight += image.Surface.Height + pad;

@@ -50,7 +50,17 @@ internal static class Program
             if (args.Contains("--uninstall")) return Installer.Uninstall(quiet: args.Contains("--quiet"));
             if (args.Contains("--install") && args.Contains("--quiet"))
             {
-                Installer.Install();
+                try
+                {
+                    Installer.Install();
+                }
+                catch (Exception exception)
+                {
+                    // The running copy was already stopped: start the old one again rather than leave none.
+                    Log.Error("Silent install failed", exception);
+                    if (args.Contains("--start") && Installer.IsInstalled) Installer.StartInstalled();
+                    return 1;
+                }
                 if (args.Contains("--start")) Installer.StartInstalled();
                 return 0;
             }
@@ -72,7 +82,14 @@ internal static class Program
         using var single = new Mutex(initiallyOwned: true, @"Local\BatteryStrip.Running", out bool first);
         if (!first)
         {
-            Log.Info("Another copy is already running.");
+            // Started again from the Start menu: the running copy opens its window, which matters most when it
+            // shows no device and has nothing on the taskbar. It may take the foreground, as this copy was just started.
+            Log.Info("Another copy is already running; asking it to open its window.");
+            AllowSetForegroundWindow(-1);
+            if (EventWaitHandle.TryOpenExisting(AppHost.ShowEventName, out EventWaitHandle? showEvent))
+            {
+                using (showEvent) showEvent.Set();
+            }
             return 0;
         }
 
@@ -89,6 +106,9 @@ internal static class Program
     }
 
     private const int LoadLibrarySearchSystem32 = 0x800;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool SetDefaultDllDirectories(int flags);

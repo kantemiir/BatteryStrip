@@ -34,6 +34,25 @@ public class DeviceStoreTests
     }
 
     [Fact]
+    public void A_reading_with_the_same_look_wakes_nobody_but_keeps_its_time()
+    {
+        DeviceStore store = NewStore();
+        int changes = 0;
+        store.Changed += () => changes++;
+        store.Connect(Mouse);
+        store.Report(Mouse.Id, new DeviceReport.Charge(82, IsCharging: false));
+        Assert.Equal(1, changes);
+
+        _now = _now.AddSeconds(30);
+        store.Report(Mouse.Id, new DeviceReport.Charge(82, IsCharging: false));
+        Assert.Equal(1, changes);
+        Assert.Equal(_now, Assert.Single(store.Snapshot).UpdatedUtc);
+
+        store.Report(Mouse.Id, new DeviceReport.Charge(81, IsCharging: false));
+        Assert.Equal(2, changes);
+    }
+
+    [Fact]
     public void Devices_are_ordered_mouse_headset_gamepad()
     {
         DeviceStore store = NewStore();
@@ -166,7 +185,7 @@ public class DeviceStoreTests
         store.Report(Headset.Id, new DeviceReport.Stale("Ждёт тишины в наушниках"));
         DeviceSnapshot shown = Assert.Single(store.Snapshot);
         Assert.True(shown.IsAsleep);
-        Assert.Equal("Ждёт тишины в наушниках, данные 4 часа назад", StatusText.For(shown, _now, Strings.Russian));
+        Assert.Equal("Ждёт тишины в наушниках · 4\u00A0ч назад", StatusText.For(shown, _now, Strings.Russian));
     }
 
     [Fact]

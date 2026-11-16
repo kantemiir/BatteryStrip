@@ -2,6 +2,65 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## 0.3.0-beta.6 — 2026-11-17
+
+- **Many more devices**, from the research collected by [Wireless Battery](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor):
+  Razer, SteelSeries, Corsair, HyperX, Glorious, Hitscan, Kysona, Pulsar and ATK mice and headsets, and any HID device
+  that reports its charge the standard way. Each is asked with read requests only, every 5 minutes and on *Refresh now*,
+  never during full-screen games. A mouse seen over both its cable and its dongle shows once, the cable's value first.
+  None of them has been tested on real hardware yet: testers welcome.
+- **Older Logitech devices** on Unifying receivers (HID++ 1.0) show their charge, and Logitech G533, G535, G633–G935 and
+  G PRO headsets use their own voltage curves, so their estimate is closer to what G HUB shows.
+- **HeadsetControl**: if you installed it yourself, the app runs it every 5 minutes and shows the headsets it knows.
+- **Credits** for Wireless Battery in the README and THIRD-PARTY-NOTICES.
+- **Easier-to-read numbers.** The outlined battery is replaced by a soft rounded plate with a larger, bold number
+  (14 px). The charge is a lighter part of the plate, and the number stays one colour all the way across, so a digit
+  no longer splits in two where the fill ends ("45" had turned into a dark 4 and a white 5). Warning colours, the bolt
+  and the sleeping look are as before.
+
+## 0.3.0-beta.5 — 2026-11-17
+
+- **JBL speakers.** A JBL speaker connected over Bluetooth now shows its charge and charging state. Windows does not
+  know it (the speaker connects for music only), so the app asks the speaker itself over Bluetooth Low Energy, with the
+  read request the JBL Portable app uses, every 10 minutes and on *Refresh now*. Tested on a Charge 6, including during
+  music. Only speakers paired with this PC are asked; nothing is sent during full-screen games.
+- **A battery in the Windows style** instead of the iPhone one: a thin outline with the number inside, the fill in
+  white (black on a light taskbar), and Windows' own yellow and red when the charge is low. Charging is shown by the
+  bolt alone, the fill no longer turns green.
+
+## 0.3.0-beta.4 — 2026-11-13
+
+Fixes from a full quality audit.
+
+- **The G435 is never read blind.** If the app cannot find the headset's audio device, it no longer assumes silence
+  and reads during music (on other PCs that would crackle). If the receiver is already in service mode (a firmware
+  update), the app leaves it alone and does not take it out of that mode.
+- **Tooltip and hover plate** on the strip: the device's name, charge and state, like a tray icon.
+- **Device list**: status lines no longer get cut off ("Estimated charge, 12 min ago", "Asleep · 3 h ago"), batteries
+  stay in one column with a charging bolt to their left, a hairline edge, no empty first frame, the gear menu no
+  longer covers the gear, and with an auto-hidden taskbar the list no longer covers the strip.
+- **A nearly empty device is visible**: the red fill stays noticeable even at 1–7 %.
+- **Light theme has more contrast** in its numbers and fill colours.
+- **No devices, still reachable**: starting the app again from Start opens its window, and the empty list says how to
+  report a device.
+- **Robustness**: Alt+F4 on the list no longer breaks it; after an Explorer restart the strip returns at once; the
+  strip no longer hides under the taskbar's own layer; a rare background error no longer closes the app; a lost device
+  connection recovers by itself; start-up holds up the taskbar less.
+- **Tray icons** (fallback mode) always respond to clicks, repaint on theme and scale changes, and show 100 % as "100".
+- **Install and update**: an update no longer turns autostart back on; autostart turned off in Task Manager shows as
+  off; uninstalling removes everything including the exe; a failed update starts the old version again; a download is
+  also checked for its version; clear error messages; a second "Install" click does not start a second download;
+  reinstall and downgrade are asked differently.
+- **Less memory, fewer wake-ups**: WPF and GDI+ are no longer loaded (taskbar buttons are read through the UI
+  Automation COM API, fonts through DirectWrite); a reading that changes nothing on screen wakes no window and writes
+  no file; the G435's audio is sampled less often during long playback and not at all in full-screen games; the
+  strip's watchdog wakes every 5 s instead of 2; known HID devices are not reopened on every Windows device event;
+  Bluetooth properties are read selectively; the location hook covers only the taskbar, not every Explorer window.
+  A growing handle count now shows up in the log.
+- **Small things**: low-battery notifications replace each other and expire after 2 hours ("20% or less"); charges are
+  saved when Windows shuts down; the README settings example works when copied; the report dialog warns that it can
+  hold Bluetooth names and addresses.
+
 ## 0.3.0-beta.3 — 2026-11-12
 
 - **A new, iPhone-style battery.** The number is cut out of a solid battery and no longer splits into two colours

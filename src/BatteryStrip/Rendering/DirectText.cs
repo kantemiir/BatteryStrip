@@ -110,7 +110,7 @@ internal sealed class DirectText : IDisposable
         if (hresult < 0) Marshal.ThrowExceptionForHR(hresult);
     }
 
-    public const int WeightRegular = 400, WeightSemibold = 600;
+    public const int WeightRegular = 400, WeightSemibold = 600, WeightBold = 700;
 
     private const int D2D1_FACTORY_TYPE_SINGLE_THREADED = 0;
     private const int DWRITE_FACTORY_TYPE_ISOLATED = 1;

@@ -15,6 +15,6 @@ internal static class StatusText
         TimeSpan age = device.UpdatedUtc is DateTime updated ? utcNow - updated : TimeSpan.MaxValue;
         if (device.IsAsleep) return text.DataFrom(device.Note ?? text.Asleep, text.Age(age));
         if (device.IsCharging) return text.Charging;
-        return device.IsEstimate ? text.Updated(age) + text.Approximate : text.Updated(age);
+        return device.IsEstimate ? text.Estimated(age) : text.Updated(age);
     }
 }

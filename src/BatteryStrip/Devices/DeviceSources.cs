@@ -1,12 +1,23 @@
 using System;
 using System.Collections.Generic;
 using BatteryStrip.Core;
+using BatteryStrip.Devices.Atk;
 using BatteryStrip.Devices.Bluetooth;
 using BatteryStrip.Devices.Compx;
+using BatteryStrip.Devices.Corsair;
 using BatteryStrip.Devices.G435;
 using BatteryStrip.Devices.GameControllers;
+using BatteryStrip.Devices.Generic;
+using BatteryStrip.Devices.Glorious;
+using BatteryStrip.Devices.HeadsetControl;
+using BatteryStrip.Devices.HyperX;
+using BatteryStrip.Devices.Jbl;
+using BatteryStrip.Devices.Kysona;
 using BatteryStrip.Devices.Logitech;
 using BatteryStrip.Devices.PlayStation;
+using BatteryStrip.Devices.Polled;
+using BatteryStrip.Devices.Razer;
+using BatteryStrip.Devices.SteelSeries;
 
 namespace BatteryStrip.Devices;
 
@@ -29,13 +40,25 @@ internal static class DeviceSources
     public static IReadOnlyList<IDeviceSource> Create(DeviceStore store, DeviceNaming naming, DeviceOptions options)
     {
         var claims = new ContainerClaims();
+        IDeviceSource Polled(PolledHidDriver driver) => new PolledHidSource(store, naming, claims, driver);
         return
         [
             new CompxSource(store, naming, claims),
             new G435Source(store, naming, claims, options),
             new HidppSource(store, naming, claims),
             new PlayStationSource(store, naming, claims),
+            Polled(new GloriousDriver()),
+            Polled(new KysonaDriver()),
+            Polled(new RazerDriver()),
+            Polled(new SteelSeriesDriver()),
+            Polled(new HyperXDriver()),
+            Polled(new CorsairDriver()),
+            new AtkSerialSource(store, naming),
             new GameControllerSource(store, naming, claims),
+            new JblSource(store, naming, claims),
+            new HeadsetControlSource(store, naming, claims),
+            // General sources last: they show only what no vendor source above has claimed.
+            Polled(new GenericHidDriver()),
             new BluetoothSource(store, naming, claims),
         ];
     }

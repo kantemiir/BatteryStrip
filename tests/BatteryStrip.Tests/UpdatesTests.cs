@@ -24,6 +24,7 @@ public class UpdatesTests
     [InlineData("1.2")]
     [InlineData("latest")]
     [InlineData("")]
+    [InlineData("v99999999999.0.0")] // used to throw OverflowException on the update timer thread
     public void Bad_tags_are_ignored(string tag)
     {
         Assert.Null(AppVersion.Parse(tag));

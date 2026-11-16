@@ -20,14 +20,18 @@ internal sealed class BluetoothSource : IDeviceSource
     /// <summary>Windows updates the value by itself; reading it is cheap, so once a minute is plenty.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
-    private static readonly DevicePropertyKey[] Keys =
+    /// <summary>Read for every node; only a connected node with a battery value gets <see cref="DetailKeys"/> read too.</summary>
+    private static readonly DevicePropertyKey[] Keys = [DevicePropertyKey.IsConnected, DevicePropertyKey.BluetoothBattery];
+
+    private static readonly DevicePropertyKey[] DetailKeys =
     [
         DevicePropertyKey.FriendlyName,
         DevicePropertyKey.ContainerId,
         DevicePropertyKey.ContainerCategory,
-        DevicePropertyKey.BluetoothBattery,
-        DevicePropertyKey.IsConnected,
     ];
+
+    private static bool HasBattery(PnpDevice node) =>
+        node.GetBool(DevicePropertyKey.IsConnected) == true && node.GetByte(DevicePropertyKey.BluetoothBattery) is byte percent && percent <= 100;
 
     private readonly DeviceStore _store;
     private readonly DeviceNaming _naming;
@@ -65,7 +69,7 @@ internal sealed class BluetoothSource : IDeviceSource
     private void ScanLocked()
     {
         var found = new Dictionary<string, (DeviceDescriptor Descriptor, int Percent)>(StringComparer.Ordinal);
-        IEnumerable<PnpDevice> nodes = Pnp.List("BTHENUM", Keys).Concat(Pnp.List("BTHLE", Keys));
+        IEnumerable<PnpDevice> nodes = Pnp.List("BTHENUM", Keys, HasBattery, DetailKeys).Concat(Pnp.List("BTHLE", Keys, HasBattery, DetailKeys));
         foreach (PnpDevice node in nodes)
         {
             if (BluetoothAddress(node.InstanceId) is not string address) continue;

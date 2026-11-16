@@ -24,7 +24,13 @@ internal sealed class TrayIcons : NativeWindow
     private readonly GlyphCache _glyphs = new();
     private readonly int _taskbarCreatedMessage = User32.RegisterWindowMessage("TaskbarCreated");
     private readonly Dictionary<string, (Guid Guid, IntPtr Icon, string Signature)> _shown = new(StringComparer.Ordinal);
+    private readonly HashSet<Guid> _pinned = new();
     private bool _enabled;
+    private string? _lastClickId;
+    private DateTime _lastClickAt;
+
+    /// <summary>A left click can arrive both as WM_LBUTTONUP and as NIN_SELECT; the second would close the flyout again.</summary>
+    private static readonly TimeSpan ClickRepeat = TimeSpan.FromMilliseconds(400);
 
     /// <summary>An icon was clicked; the argument is the device id.</summary>
     public event Action<string>? Clicked;
@@ -75,13 +81,24 @@ internal sealed class TrayIcons : NativeWindow
                 if (_enabled) Update();
                 return IntPtr.Zero;
 
+            case User32.WM_SETTINGCHANGE:
+            case User32.WM_DISPLAYCHANGE:
+            case User32.WM_DPICHANGED:
+                // A new theme or scale: every icon is painted again (its colours and size are in the signature).
+                if (_enabled) Update();
+                return null;
+
             case WM_TRAY:
-                // NOTIFYICON_VERSION_4: the event is in the low word of lParam, the icon in the high word.
+                // NOTIFYICON_VERSION_4: the event is in the low word of lParam, the icon id in the high word.
                 int trayEvent = User32.LowWord(lParam);
-                string? id = _shown.FirstOrDefault(p => IconId(p.Value.Guid) == User32.HighWord(lParam)).Key;
                 if (trayEvent == NIN_SELECT || trayEvent == User32.WM_LBUTTONUP)
                 {
-                    if (id != null) Clicked?.Invoke(id);
+                    string? id = IconAt((ushort)User32.HighWord(lParam));
+                    DateTime now = DateTime.UtcNow;
+                    bool repeat = id == _lastClickId && now - _lastClickAt < ClickRepeat;
+                    _lastClickId = id;
+                    _lastClickAt = now;
+                    if (id != null && !repeat) Clicked?.Invoke(id);
                 }
                 else if (trayEvent == WM_CONTEXTMENU)
                 {
@@ -100,10 +117,10 @@ internal sealed class TrayIcons : NativeWindow
         foreach (string gone in _shown.Keys.Where(id => devices.All(d => d.Id != id)).ToArray()) Remove(gone);
 
         Palette palette = Theme.Current();
-        int size = GetSystemMetrics(SM_CXSMICON);
+        int size = IconSize();
         foreach (DeviceSnapshot device in devices)
         {
-            string signature = $"{device.Percent}|{device.IsCharging}|{device.IsAsleep}|{device.Level}|{palette.IsLight}|{device.Name}";
+            string signature = $"{device.Percent}|{device.IsCharging}|{device.IsAsleep}|{device.Level}|{palette.IsLight}|{device.Name}|{size}|{StatusText.For(device, DateTime.UtcNow)}";
             bool exists = _shown.TryGetValue(device.Id, out var current);
             if (exists && current.Signature == signature) continue;
 
@@ -126,8 +143,43 @@ internal sealed class TrayIcons : NativeWindow
             _shown[device.Id] = (guid, icon, signature);
         }
 
-        // Explorer creates the settings entry a moment after an icon first appears, so pinning is retried on every update.
-        foreach (var entry in _shown.Values) Pin(entry.Guid);
+        // Explorer creates the settings entry a moment after an icon first appears, so pinning is retried on later
+        // updates until it is done; then that icon's entry is left alone.
+        foreach (var entry in _shown.Values)
+        {
+            if (!_pinned.Contains(entry.Guid) && Pin(entry.Guid)) _pinned.Add(entry.Guid);
+        }
+    }
+
+    /// <summary>Small icon size for the taskbar's current scale (GetSystemMetrics keeps the scale the program started with).</summary>
+    private static int IconSize()
+    {
+        IntPtr taskbar = User32.FindWindow("Shell_TrayWnd", null);
+        uint dpi = taskbar != IntPtr.Zero ? GetDpiForWindow(taskbar) : 0;
+        return dpi != 0 ? GetSystemMetricsForDpi(SM_CXSMICON, dpi) : GetSystemMetrics(SM_CXSMICON);
+    }
+
+    /// <summary>The device of the clicked icon: by its id, or by where the click was if Windows sent no usable id.</summary>
+    private string? IconAt(ushort iconId)
+    {
+        foreach (var pair in _shown)
+        {
+            if (IconId(pair.Value.Guid) == iconId) return pair.Key;
+        }
+        if (!User32.GetCursorPos(out User32.POINT cursor)) return null;
+        foreach (var pair in _shown)
+        {
+            var identifier = new NOTIFYICONIDENTIFIER
+            {
+                cbSize = Marshal.SizeOf(typeof(NOTIFYICONIDENTIFIER)),
+                hWnd = Handle,
+                uID = IconId(pair.Value.Guid),
+                guidItem = pair.Value.Guid,
+            };
+            if (Shell_NotifyIconGetRect(ref identifier, out User32.RECT rect) == 0
+                && cursor.X >= rect.Left && cursor.X < rect.Right && cursor.Y >= rect.Top && cursor.Y < rect.Bottom) return pair.Key;
+        }
+        return null;
     }
 
     private bool Add(ref NOTIFYICONDATA data)
@@ -171,7 +223,7 @@ internal sealed class TrayIcons : NativeWindow
 
     private static string Tooltip(DeviceSnapshot device)
     {
-        string charge = device.Percent is int percent ? $"{percent} %" : Text.Current.NoData;
+        string charge = device.Percent is int percent ? Text.Current.Percent(percent) : Text.Current.NoData;
         string text = $"{device.Name}: {charge}\n{StatusText.For(device, DateTime.UtcNow)}";
         return text.Length > 127 ? text.Substring(0, 127) : text;
     }
@@ -191,25 +243,31 @@ internal sealed class TrayIcons : NativeWindow
     /// HKCU\Control Panel\NotifyIconSettings; the key is created by Explorer when an icon first appears.
     /// Undocumented, so any failure is ignored.
     /// </summary>
-    private static void Pin(Guid guid)
+    /// <returns>True when the icon's entry was found and is pinned now.</returns>
+    private static bool Pin(Guid guid)
     {
         try
         {
             using RegistryKey? root = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings");
-            if (root == null) return;
+            if (root == null) return false;
+            bool found = false;
             foreach (string name in root.GetSubKeyNames())
             {
-                using RegistryKey? entry = root.OpenSubKey(name, writable: true);
+                using RegistryKey? entry = root.OpenSubKey(name);
                 if (entry == null) continue;
                 if (!string.Equals(entry.GetValue("ExecutablePath") as string, AppInfo.ExePath, StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.GetValue("IconGuid") is string iconGuid && Guid.TryParse(iconGuid, out Guid stored) && stored != guid) continue;
+                found = true;
                 if (entry.GetValue("IsPromoted") is int promoted && promoted == 1) continue;
-                entry.SetValue("IsPromoted", 1, RegistryValueKind.DWord);
+                using RegistryKey? writable = root.OpenSubKey(name, writable: true);
+                writable?.SetValue("IsPromoted", 1, RegistryValueKind.DWord);
             }
+            return found;
         }
         catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or System.IO.IOException)
         {
             Log.Warn($"Cannot pin tray icon: {exception.Message}");
+            return false;
         }
     }
 
@@ -217,7 +275,7 @@ internal sealed class TrayIcons : NativeWindow
     private IntPtr PaintIcon(DeviceSnapshot device, Palette palette, int size)
     {
         var surface = new Surface(size, size);
-        string text = device.Percent is int percent ? (percent >= 100 ? "99" : percent.ToString()) : "–";
+        string text = device.Percent is int percent ? percent.ToString() : "–";
         Rgba colour = device.Percent == null || device.IsAsleep ? palette.Dimmed
             : device.IsCharging ? palette.Charging
             : device.Level switch
@@ -227,7 +285,7 @@ internal sealed class TrayIcons : NativeWindow
                 _ => palette.Text,
             };
 
-        // Two digits fill a small icon; the font is as large as fits its width.
+        // Two digits fill a small icon, "100" is set smaller; the font is as large as fits its width.
         GlyphMask mask = _glyphs.Get(GlyphFont.NumberSemibold, size * 0.8f, text, !palette.IsLight);
         for (float font = size * 0.8f; mask.Width > size && font > 6; font -= 0.5f) mask = _glyphs.Get(GlyphFont.NumberSemibold, font, text, !palette.IsLight);
         surface.DrawMask(mask, (size - mask.Width) / 2, (size - mask.Height) / 2, colour);
@@ -287,6 +345,15 @@ internal sealed class TrayIcons : NativeWindow
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct NOTIFYICONIDENTIFIER
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public int uID;
+        public Guid guidItem;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct ICONINFO
     {
         [MarshalAs(UnmanagedType.Bool)] public bool fIcon;
@@ -305,6 +372,15 @@ internal sealed class TrayIcons : NativeWindow
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("shell32.dll")]
+    private static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out User32.RECT rect);
 
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateBitmap(int width, int height, int planes, int bitsPerPixel, IntPtr bits);
