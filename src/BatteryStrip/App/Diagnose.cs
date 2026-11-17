@@ -33,7 +33,10 @@ internal static class Diagnose
             foreach (HidCollection c in HidCollection.EnumeratePresent().OrderBy(c => c.VendorId).ThenBy(c => c.ProductId).ThenBy(c => c.UsagePage))
             {
                 string battery = Devices.Generic.GenericHidDriver.DeclaresBattery(c) ? "  [battery usage]" : "";
-                output.WriteLine($"  {c.VendorId:X4}:{c.ProductId:X4}  {c.UsagePage:X4}/{c.Usage:X2}  {c.InputLength,3}/{c.OutputLength,3}/{c.FeatureLength,3}  \"{c.Product}\"{battery}");
+                // Output report ids of vendor collections tell which variant of a vendor protocol a device speaks.
+                IReadOnlyList<byte> outputIds = c.IsVendorDefined && c.OutputLength > 0 ? HidReportIds.Output(c) : Array.Empty<byte>();
+                string ids = outputIds.Count > 0 ? $"  [out {string.Join(" ", outputIds.Select(id => id.ToString("X2")))}]" : "";
+                output.WriteLine($"  {c.VendorId:X4}:{c.ProductId:X4}  {c.UsagePage:X4}/{c.Usage:X2}  {c.InputLength,3}/{c.OutputLength,3}/{c.FeatureLength,3}  \"{c.Product}\"{battery}{ids}");
             }
             output.WriteLine();
 
@@ -41,17 +44,20 @@ internal static class Diagnose
             Log.Mirror = output;
             var store = new DeviceStore(() => DateTime.UtcNow);
             store.Changed += () => WriteDevices(output, store.Snapshot);
+            IReadOnlyList<DeviceSnapshot> result;
             using (var manager = new DeviceManager(DeviceSources.Create(store, DeviceNaming.Default, DeviceOptions.ReadOnly)))
             {
                 manager.Start();
                 Thread.Sleep(duration);
+                // Taken before the sources stop: stopping removes their devices from the store.
+                result = store.Snapshot;
             }
             Log.Mirror = null;
 
             output.WriteLine();
             output.WriteLine("Result:");
-            WriteDevices(output, store.Snapshot);
-            if (store.Snapshot.Count == 0) output.WriteLine("  no devices with a known charge");
+            WriteDevices(output, result);
+            if (result.Count == 0) output.WriteLine("  no devices with a known charge");
         }
 
         if (openReport) Process.Start(new ProcessStartInfo(reportPath) { UseShellExecute = true });

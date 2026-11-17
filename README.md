@@ -9,7 +9,7 @@ mouse, headset, controller, keyboard. It finds them by itself and shows as many 
 
 ![The strip on the taskbar](docs/strip.png)
 
-> **Beta.** Three devices have been tested on real hardware so far: a Lamzu mouse, a Logitech G435 headset and a JBL Charge 6.
+> **Beta.** Four devices have been tested on real hardware so far: a Lamzu mouse, Logitech G435 and G522 headsets and a JBL Charge 6.
 > Everything else is implemented from public protocol documentation and needs testers.
 > If your device is listed below, please tell us whether it works.
 
@@ -51,6 +51,7 @@ downloads. Click *More info* → *Run anyway*. Each release page lists the SHA-2
 |---|---|---|
 | Mice on the COMPX chipset (receiver 25A7): **Lamzu**, Ajazz, Attack Shark, VXE and others | Exact percent and charging state. If the vendor app is running, its own requests are reused and the mouse is not asked again. | Lamzu ✔ |
 | **Logitech G435** on its own receiver (046D:0ACB) | Estimated from the battery voltage. Reading pauses the headset's audio for about a second, so it is **off until you agree**; then it happens at most every 30 minutes and only during silence. | ✔ |
+| **Logitech G522 LIGHTSPEED** and **PRO X 2 LIGHTSPEED** on their own receivers (046D:0B18, 046D:0AF7) | Exact percent and charging state over Logitech's newer "Centurion" protocol: read requests only, every 5 minutes; the headset also reports changes by itself. | G522 ✔ |
 | **Logitech HID++** mice, keyboards and headsets on Unifying, Bolt, Lightspeed and by cable (G Pro, G305, G502 X, MX Master, G733, G535 and others), including older Unifying devices (HID++ 1.0) | Exact percent or a voltage estimate, depending on the device; G533, G535, G633–G935 and G PRO headsets have their own voltage curves. Standard read requests, the same G HUB and Solaar send. | needs testers |
 | **Razer** wireless mice, keyboards and dongles | Exact percent and charging state. | needs testers |
 | **SteelSeries**: Arctis 1, 7, 7+, 9, Pro, Pro Wireless, Nova 3P, 5, 7, 7X, 7P, Nova Pro Wireless, GameBuds; Aerox 3/5/9 Wireless, Prime Wireless, Rival 3 Wireless, Rival 650, Rival Pro | Percent or level steps, depending on the model, and charging state where the device reports it. | needs testers |

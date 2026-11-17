@@ -46,6 +46,7 @@ internal static class DeviceSources
             new CompxSource(store, naming, claims),
             new G435Source(store, naming, claims, options),
             new HidppSource(store, naming, claims),
+            new CenturionSource(store, naming, claims),
             new PlayStationSource(store, naming, claims),
             Polled(new GloriousDriver()),
             Polled(new KysonaDriver()),

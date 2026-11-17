@@ -2,6 +2,15 @@
 
 [Русская версия](CHANGELOG.ru.md)
 
+## Unreleased
+
+- **Logitech G522 LIGHTSPEED and PRO X 2 LIGHTSPEED.** These newer headsets speak Logitech's "Centurion" protocol
+  instead of HID++, so they did not show up. The app now finds the receiver's address and the headset behind it by
+  itself and reads the exact percent and charging state every 5 minutes, with read requests only and never during
+  full-screen games. Tested on a G522; the PRO X 2 needs testers.
+- **Device report.** Its "Result" no longer says "no devices" after a good read, and it lists the report ids of vendor
+  collections, which tell apart variants of one protocol.
+
 ## 0.3.0-beta.6 — 2026-11-17
 
 - **Many more devices**, from the research collected by [Wireless Battery](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor):
